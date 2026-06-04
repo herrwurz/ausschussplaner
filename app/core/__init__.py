@@ -1,0 +1,1 @@
+"""Core-Konfiguration und Utilities."""
