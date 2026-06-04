@@ -86,3 +86,54 @@ def test_rules_get_and_update(client):
     })
     assert r2.status_code == 200
     assert r2.json()["block_minuten"] == 120
+
+
+def test_deactivate_activate_person(client):
+    pid = client.post("/api/persons", json={"vorname": "Alt", "nachname": "Mandat"}).json()["id"]
+    r = client.post(f"/api/persons/{pid}/deactivate")
+    assert r.status_code == 200
+    assert r.json()["aktiv"] is False
+    r2 = client.post(f"/api/persons/{pid}/activate")
+    assert r2.json()["aktiv"] is True
+
+
+def test_transfer_agenda(client):
+    # Quelle mit 2 Mitgliedschaften, Ziel ohne
+    quelle = client.post("/api/persons", json={"vorname": "Aus", "nachname": "Scheidend"}).json()["id"]
+    ziel = client.post("/api/persons", json={"vorname": "Neu", "nachname": "Mandat"}).json()["id"]
+
+    a1 = client.post("/api/committees", json={
+        "name": "A1", "typ": "poly",
+        "mitglieder": [{"person_id": quelle, "rolle": "Obmann"}]}).json()["id"]
+    client.post("/api/committees", json={
+        "name": "A2", "typ": "poly",
+        "mitglieder": [{"person_id": quelle, "rolle": "Mitglied"}]})
+
+    r = client.post("/api/persons/transfer-agenda", json={
+        "von_person_id": quelle, "zu_person_id": ziel,
+        "quelle_deaktivieren": True, "verfuegbarkeit_uebernehmen": False})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["uebertragene_mitgliedschaften"] == 2
+    assert data["quelle_deaktiviert"] is True
+
+    # Quelle ist jetzt inaktiv
+    assert client.get(f"/api/persons/{quelle}").json()["aktiv"] is False
+    # Ziel hat nun die Obmann-Rolle in A1 (Rolle erhalten)
+    a1_data = client.get(f"/api/committees/{a1}").json()
+    assert any(m["person_id"] == ziel and m["rolle"] == "Obmann" for m in a1_data["mitglieder"])
+
+
+def test_transfer_agenda_skips_duplicates(client):
+    quelle = client.post("/api/persons", json={"vorname": "Q", "nachname": "X"}).json()["id"]
+    ziel = client.post("/api/persons", json={"vorname": "Z", "nachname": "Y"}).json()["id"]
+    # Beide im selben Ausschuss
+    client.post("/api/committees", json={
+        "name": "Gemeinsam", "typ": "poly",
+        "mitglieder": [
+            {"person_id": quelle, "rolle": "Mitglied"},
+            {"person_id": ziel, "rolle": "Obmann"}]})
+    r = client.post("/api/persons/transfer-agenda", json={
+        "von_person_id": quelle, "zu_person_id": ziel}).json()
+    assert r["uebertragene_mitgliedschaften"] == 0
+    assert r["uebersprungen"] == 1

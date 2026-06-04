@@ -193,3 +193,24 @@ class JahresplanCopy(BaseModel):
     uebernehme_verfuegbarkeiten: bool = True
     uebernehme_regeln: bool = True
     schliesse_inaktive_aus: bool = False
+
+
+# ─────────────────── Agenden-Übernahme / Nachfolge ────────────────────
+class AgendaTransfer(BaseModel):
+    """Überträgt alle Ausschuss-Mitgliedschaften (Agenden) von einer Person
+    auf eine andere. Typischer Fall: ausgeschiedenes Mandat wird ersetzt.
+    """
+
+    von_person_id: int
+    zu_person_id: int
+    quelle_deaktivieren: bool = True   # ausscheidende Person inaktiv setzen
+    verfuegbarkeit_uebernehmen: bool = False  # optional Verfügbarkeit kopieren
+
+
+class AgendaTransferResult(BaseModel):
+    von_person_id: int
+    zu_person_id: int
+    uebertragene_mitgliedschaften: int
+    uebersprungen: int   # bereits vorhandene Mitgliedschaften
+    quelle_deaktiviert: bool
+    verfuegbarkeit_kopiert: bool

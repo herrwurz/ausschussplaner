@@ -8,12 +8,15 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.models.models import Person, Verfuegbarkeit
 from app.schemas.schemas import (
+    AgendaTransfer,
+    AgendaTransferResult,
     PersonCreate,
     PersonOut,
     PersonUpdate,
     VerfuegbarkeitBulk,
     VerfuegbarkeitOut,
 )
+from app.services.person_service import transfer_agenda
 
 router = APIRouter(prefix="/persons", tags=["Personen"])
 
@@ -62,6 +65,45 @@ def delete_person(person_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
     db.delete(person)
     db.commit()
+
+
+# ── Aktivieren / Deaktivieren ──
+@router.post("/{person_id}/deactivate", response_model=PersonOut)
+def deactivate_person(person_id: int, db: Session = Depends(get_db)):
+    """Setzt eine Person inaktiv (z. B. ausgeschieden)."""
+    person = db.get(Person, person_id)
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
+    person.aktiv = False
+    db.commit()
+    db.refresh(person)
+    return person
+
+
+@router.post("/{person_id}/activate", response_model=PersonOut)
+def activate_person(person_id: int, db: Session = Depends(get_db)):
+    """Reaktiviert eine Person."""
+    person = db.get(Person, person_id)
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
+    person.aktiv = True
+    db.commit()
+    db.refresh(person)
+    return person
+
+
+# ── Agenden-Übernahme / Nachfolge ──
+@router.post("/transfer-agenda", response_model=AgendaTransferResult)
+def post_transfer_agenda(payload: AgendaTransfer, db: Session = Depends(get_db)):
+    """Überträgt alle Ausschuss-Agenden von einer Person auf eine andere.
+
+    Anwendungsfall: ausgeschiedenes Mandat wird durch eine neue Person ersetzt;
+    die neue Person übernimmt sämtliche Rollen/Mitgliedschaften.
+    """
+    try:
+        return transfer_agenda(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 # ── Verfügbarkeiten ──

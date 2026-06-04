@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen dieses Projekts werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/).
 
+## [Unreleased]
+
+### Geändert
+- Stammdaten-Korrekturen: Biadt→Biladt, Hocrathner→Hochrathner, Hofstetter→Hofreither
+- Hasenleitner Lothar auf inaktiv gesetzt
+- Ausschuss-Mitgliedschaften personenweise neu gegen die Quelltabelle abgeglichen
+
+### Hinzugefügt
+- Fabian Plaimauer als neuer Gemeinderat (übernimmt Hasenleitners Agenden)
+- Endpunkt `POST /api/persons/transfer-agenda`: überträgt alle Mitgliedschaften
+  (Rollen bleiben erhalten) von einer Person auf eine andere
+- Endpunkte `POST /api/persons/{id}/deactivate` und `/activate`
+- Tests für Agenden-Übernahme und Aktivierung/Deaktivierung
+
 ## [0.1.0] - 2025-06
 
 ### Hinzugefügt

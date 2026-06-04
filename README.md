@@ -129,7 +129,10 @@ Details siehe [`docs/SCHEDULING.md`](docs/SCHEDULING.md).
 |---------|-------------------------------------------|------------------------------------|
 | GET     | `/api/persons`                            | Personen auflisten                 |
 | POST    | `/api/persons`                            | Person anlegen                     |
-| PATCH   | `/api/persons/{id}`                        | Person ändern                      |
+| PATCH   | `/api/persons/{id}`                        | Person ändern (Stammdaten)         |
+| POST    | `/api/persons/{id}/deactivate`             | Person inaktiv setzen (ausgeschieden) |
+| POST    | `/api/persons/{id}/activate`               | Person reaktivieren                |
+| POST    | `/api/persons/transfer-agenda`             | Agenden auf Nachfolger:in übertragen |
 | PUT     | `/api/persons/{id}/verfuegbarkeit`        | Verfügbarkeit komplett setzen      |
 | GET     | `/api/committees`                         | Ausschüsse auflisten               |
 | POST    | `/api/committees`                         | Ausschuss + Mitglieder anlegen     |
@@ -176,6 +179,7 @@ Für Produktion: `DATABASE_URL` auf PostgreSQL umstellen (`postgresql+psycopg://
 
 - [ ] Persistieren der Sitzungsvorschläge (`sitzungsvorschlag` befüllen)
 - [ ] Berücksichtigung datierter Abwesenheiten in der Berechnung (aktuell Standardverfügbarkeit)
+- [x] Agenden-Übernahme (Nachfolge-Mechanik) als Endpunkt
 - [ ] Jahresplan-Kopie als Endpunkt
 - [ ] Stadtrat-/Gemeinderat-Sonderregeln (alle / 2-3-Mehrheit)
 - [ ] Authentifizierung & Rollen (Admin/Leser)
