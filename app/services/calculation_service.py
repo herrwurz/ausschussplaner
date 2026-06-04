@@ -1,11 +1,13 @@
 """Bindeglied zwischen DB und der reinen Berechnungs-Engine."""
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.enums import AusschussTyp, TerminStatus, Wochentag
-from app.models.models import Ausschuss, Sitzungsregel
+from app.models.models import Ausschuss, Mitgliedschaft, Person, Sitzungsregel
 from app.schemas.schemas import (
     AusschussAnalyse,
     BerechnungRequest,
@@ -26,8 +28,27 @@ def _load_regel(db: Session) -> Sitzungsregel:
     return regel
 
 
-def _committee_to_input(ausschuss: Ausschuss) -> sched.CommitteeInput:
-    """ORM-Ausschuss -> Engine-Eingabe inkl. Verfügbarkeiten."""
+def _blocked_dates(person: Person, start_date: date, weeks: int) -> frozenset:
+    """Gibt alle Daten im Planungszeitraum zurück, an denen die Person abwesend ist."""
+    end_date = start_date + timedelta(days=weeks * 7 - 1)
+    blocked: set[date] = set()
+    for ab in person.abwesenheiten:
+        if ab.bis < start_date or ab.von > end_date:
+            continue
+        d = max(ab.von, start_date)
+        stop = min(ab.bis, end_date)
+        while d <= stop:
+            blocked.add(d)
+            d += timedelta(days=1)
+    return frozenset(blocked)
+
+
+def _committee_to_input(
+    ausschuss: Ausschuss,
+    start_date: date | None = None,
+    weeks: int = 2,
+) -> sched.CommitteeInput:
+    """ORM-Ausschuss -> Engine-Eingabe inkl. Verfügbarkeiten und Abwesenheiten."""
     members: list[sched.MemberInput] = []
     for ms in ausschuss.mitgliedschaften:
         person = ms.person
@@ -37,12 +58,18 @@ def _committee_to_input(ausschuss: Ausschuss) -> sched.CommitteeInput:
         for v in person.verfuegbarkeiten:
             if v.verfuegbar:
                 avail.setdefault(v.wochentag, set()).add(v.stunde)
+
+        absent: frozenset = frozenset()
+        if start_date is not None:
+            absent = _blocked_dates(person, start_date, weeks)
+
         members.append(
             sched.MemberInput(
                 person_id=person.id,
                 name=person.name,
                 rolle=ms.rolle,
                 availability=avail,
+                absent_dates=absent,
             )
         )
     return sched.CommitteeInput(
@@ -60,6 +87,7 @@ def _slot_to_out(s: sched.Slot) -> TerminVorschlagOut:
         wochentag=s.day,
         start=s.start_str,
         ende=s.end_str,
+        datum=s.datum,
         ausschuss_id=s.committee_id,
         ausschuss_name=s.committee_name,
         obmann_da=s.obmann_present,
@@ -82,9 +110,21 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
         AusschussTyp.KONTROLL: regel.quorum_kontroll,
     }
 
-    stmt = select(Ausschuss).options(
-        selectinload(Ausschuss.mitgliedschaften)
-    ).where(Ausschuss.aktiv.is_(True))
+    weeks = req.planungswochen or regel.planungswochen
+    start_date = req.start_datum
+
+    stmt = (
+        select(Ausschuss)
+        .options(
+            selectinload(Ausschuss.mitgliedschaften)
+            .selectinload(Mitgliedschaft.person)
+            .selectinload(Person.abwesenheiten),
+            selectinload(Ausschuss.mitgliedschaften)
+            .selectinload(Mitgliedschaft.person)
+            .selectinload(Person.verfuegbarkeiten),
+        )
+        .where(Ausschuss.aktiv.is_(True))
+    )
     if req.ausschuss_ids:
         stmt = stmt.where(Ausschuss.id.in_(req.ausschuss_ids))
     ausschuesse = db.scalars(stmt).unique().all()
@@ -93,14 +133,15 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
     top_total = besch_total = krit_total = 0
 
     for a in ausschuesse:
-        cin = _committee_to_input(a)
+        cin = _committee_to_input(a, start_date=start_date, weeks=weeks)
         result = sched.calculate_committee(
             cin,
             duration_min=regel.block_minuten,
-            weeks=req.planungswochen or regel.planungswochen,
+            weeks=weeks,
             friday_mode=req.freitag_modus,
             max_alternatives=req.max_alternativen,
             quorum_defaults=quorum_defaults,
+            start_date=start_date,
         )
 
         tops = [s for s in result.all_slots if s.status == TerminStatus.TOP]

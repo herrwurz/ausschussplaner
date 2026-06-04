@@ -14,6 +14,27 @@ from app.models.enums import (
 )
 
 
+# ─────────────────────────── Jahresplan ───────────────────────────
+class JahresplanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    jahr: int
+    bezeichnung: str
+    aktiv: bool
+
+
+class JahresplanCreate(BaseModel):
+    jahr: int
+    bezeichnung: str = ""
+
+
+class JahresplanCopyResult(BaseModel):
+    jahresplan_id: int
+    ziel_jahr: int
+    personen_uebernommen: int
+    regel_kopiert: bool
+
+
 # ─────────────────────────── Person ───────────────────────────
 class PersonBase(BaseModel):
     vorname: str = Field(min_length=1, max_length=100)
@@ -147,6 +168,7 @@ class BerechnungRequest(BaseModel):
     planungswochen: int = 2
     freitag_modus: str = "reserve"  # reserve | normal | nein
     max_alternativen: int = 5
+    start_datum: date | None = None  # Montag der ersten Planungswoche; aktiviert Abwesenheits-Check
 
 
 class TerminVorschlagOut(BaseModel):
@@ -154,6 +176,7 @@ class TerminVorschlagOut(BaseModel):
     wochentag: Wochentag
     start: str          # "16:00"
     ende: str           # "17:30"
+    datum: date | None = None
     ausschuss_id: int
     ausschuss_name: str
     obmann_da: bool

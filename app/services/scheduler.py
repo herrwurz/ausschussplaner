@@ -15,6 +15,7 @@ Kernregeln (Masterprompt):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from app.models.enums import AusschussTyp, Rolle, TerminStatus, Wochentag
 
@@ -26,6 +27,13 @@ DAY_LABEL = {
     Wochentag.DO: "Donnerstag",
     Wochentag.FR: "Freitag",
 }
+DAY_OFFSET: dict[Wochentag, int] = {
+    Wochentag.MO: 0,
+    Wochentag.DI: 1,
+    Wochentag.MI: 2,
+    Wochentag.DO: 3,
+    Wochentag.FR: 4,
+}
 
 
 # ───────────────────────── Eingabe-Strukturen ─────────────────────────
@@ -34,12 +42,14 @@ class MemberInput:
     """Ein Mitglied mit Rolle und seiner Verfügbarkeit.
 
     availability: Mapping Wochentag -> Set verfügbarer voller Stunden.
+    absent_dates: Konkrete Kalender-Daten, an denen die Person abwesend ist.
     """
 
     person_id: int
     name: str
     rolle: Rolle
     availability: dict[Wochentag, set[int]]
+    absent_dates: frozenset = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -69,6 +79,7 @@ class Slot:
     prio: int
     committee_id: int
     committee_name: str
+    datum: date | None = None
 
     @property
     def start_str(self) -> str:
@@ -115,8 +126,16 @@ def required_hours(start_min: int, duration_min: int) -> list[int]:
     return list(range(first, last + 1))
 
 
-def is_present(member: MemberInput, day: Wochentag, start_min: int, duration_min: int) -> bool:
-    """Person ist anwesend, wenn ALLE benötigten Stunden verfügbar sind."""
+def is_present(
+    member: MemberInput,
+    day: Wochentag,
+    start_min: int,
+    duration_min: int,
+    slot_date: date | None = None,
+) -> bool:
+    """Person ist anwesend, wenn ALLE benötigten Stunden verfügbar und kein Abwesenheitseintrag für das Datum vorliegt."""
+    if slot_date is not None and slot_date in member.absent_dates:
+        return False
     avail = member.availability.get(day, set())
     return all(h in avail for h in required_hours(start_min, duration_min))
 
@@ -155,6 +174,7 @@ def calculate_committee(
     max_alternatives: int = 5,
     quorum_defaults: dict[AusschussTyp, int] | None = None,
     max_end_min: int = 20 * 60,
+    start_date: date | None = None,
 ) -> CommitteeResult:
     """Berechne alle Terminvorschläge eines Ausschusses."""
     if quorum_defaults is None:
@@ -183,11 +203,19 @@ def calculate_committee(
             if day == Wochentag.FR and friday_mode == "nein":
                 continue
             is_friday = day == Wochentag.FR
+
+            slot_date: date | None = None
+            if start_date is not None:
+                slot_date = start_date + timedelta(days=(week - 1) * 7 + DAY_OFFSET[day])
+
             for start_min in allowed_starts():
                 if start_min + duration_min > max_end_min:
                     continue
 
-                present = [m for m in members if is_present(m, day, start_min, duration_min)]
+                present = [
+                    m for m in members
+                    if is_present(m, day, start_min, duration_min, slot_date)
+                ]
                 present_ids = {m.person_id for m in present}
                 missing = [m for m in members if m.person_id not in present_ids]
 
@@ -216,6 +244,7 @@ def calculate_committee(
                         prio=prio,
                         committee_id=committee.committee_id,
                         committee_name=committee.name,
+                        datum=slot_date,
                     )
                 )
 

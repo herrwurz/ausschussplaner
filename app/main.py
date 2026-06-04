@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import absences, calculation, committees, persons, rules
+from app.api.routes import absences, calculation, committees, jahresplan, persons, rules
 from app.core.config import get_settings
 from app.db.base import Base, engine
 
@@ -43,6 +43,7 @@ app.include_router(committees.router, prefix="/api")
 app.include_router(absences.router, prefix="/api")
 app.include_router(rules.router, prefix="/api")
 app.include_router(calculation.router, prefix="/api")
+app.include_router(jahresplan.router, prefix="/api")
 
 
 @app.get("/health", tags=["System"])
