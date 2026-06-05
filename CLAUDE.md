@@ -27,13 +27,14 @@ Regelbasiertes Sitzungstermin-Backend für Gemeinde-Ausschüsse (Österreich).
 
 ```
 app/
-  main.py                    # FastAPI-App, Router-Registrierung, CORS
+  main.py                    # FastAPI-App, Router-Registrierung, CORS, Lifespan-Seed
   core/config.py             # Pydantic Settings (.env)
   db/base.py                 # Engine, Session, Base, get_db-Dependency
-  db/seed.py                 # Echtdaten: 33 Personen, 13 Ausschüsse
-  models/models.py           # ORM: Person, Verfuegbarkeit, Ausschuss, Mitgliedschaft,
-                             #       Abwesenheit, Sitzungsregel, Jahresplan, Sitzungsvorschlag
-  models/enums.py            # AusschussTyp, Rolle, Wochentag, AbwesenheitsArt, TerminStatus
+  db/seed.py                 # Echtdaten: 33 Personen, 13 Ausschüsse (lazy-load)
+  models/
+    models.py                # ORM: Person, Verfuegbarkeit, Ausschuss, Mitgliedschaft,
+                             #      Abwesenheit, Sitzungsregel, Jahresplan, Sitzungsvorschlag
+    enums.py                 # AusschussTyp, Rolle, Wochentag, AbwesenheitsArt, TerminStatus
   schemas/schemas.py         # Pydantic-Request/Response-Schemas
   services/
     scheduler.py             # Kern-Berechnungsengine — KEIN DB-Zugriff, rein testbar
@@ -47,6 +48,7 @@ app/
     rules.py                 # Sitzungsregel-Singleton (GET + PUT)
     calculation.py           # POST /calculate
     jahresplan.py            # GET/POST /jahresplan, POST /jahresplan/copy
+    admin.py                 # 🆕 Web-Admin-UI: HTML-Server-Rendering für Stammdaten-Management
 tests/
   conftest.py                # In-Memory-SQLite-Fixture, TestClient mit DB-Override
   test_scheduler.py          # Engine-Unit-Tests (Masterprompt-Regeln)
@@ -67,8 +69,9 @@ tests/
 - Priorität: 100 % → beschlussfähig → Obmann+Stv. → nur Obmann → nicht beschlussfähig
 - Freitagstermine haben niedrigere Priorität
 
-## API-Endpunkte (Kurzübersicht)
+## API-Endpunkte
 
+### REST API (`/api/`)
 | Methode | Pfad | Zweck |
 |---------|------|-------|
 | GET/POST | `/api/persons` | Personen |
@@ -82,8 +85,67 @@ tests/
 | GET/POST | `/api/jahresplan` | Jahrespläne |
 | POST | `/api/jahresplan/copy` | Jahresplan kopieren |
 
+### Web-Admin-UI (`/admin/`)
+🆕 HTML-basierte Verwaltungsoberfläche für Stammdaten (Server-Rendered mit FastAPI + Bootstrap 5.3)
+
+| Route | Funktion |
+|-------|----------|
+| `/admin/login` | Cookie-basierte Auth (password: `admin123` Demo) |
+| `/admin/` | Dashboard mit Navigationsmenu |
+| `/admin/personen` | Personen-CRUD mit Delete-Schutz |
+| `/admin/ausschuesse` | Ausschuesse-CRUD + Mitgliedschaftsverwaltung |
+| `/admin/ausschuesse/{id}/mitgliedschaften` | Personen zu Ausschuss hinzufügen/entfernen |
+| `/admin/abwesenheiten` | Abwesenheits-CRUD (Urlaub, Krankheit, etc.) |
+| `/admin/verfuegbarkeiten` | Wochentag × Stunde Verfügbarkeits-Matrix pro Person |
+| `/admin/jahrespläne` | Jahresplan-CRUD |
+| `/admin/sitzungsregeln` | Berechnung konfigurieren (Timeouts, Quorum, etc.) |
+| `/admin/logout` | Cookie löschen |
+
+## Web-Admin-UI — Sicherheit & Validierung
+
+**Implementierte Sicherheits-Fixes** (Code-Review: 8/8 findings fixed):
+- ✅ **XSS-Prevention:** HTML-Escaping für alle Benutzerdaten (`html.escape()`)
+- ✅ **CSRF-Protection:** SameSite=Strict Cookie-Flag
+- ✅ **Exception-Handling:** Try/except für `ValueError` (int/Enum-Konversionen)
+- ✅ **Input-Validierung:** Enum-Konversionen, Redirect-URL-Validierung
+- ✅ **Fehler-Feedback:** Error-Pages statt stille Failures
+- ✅ **Datenbank-Constraints:** Delete-Schutz (Personen ohne Mitgliedschaften, Ausschuesse ohne Mitglieder)
+
+**Auth-Model:**
+- Cookie-basierte Session (kein SessionMiddleware nötig)
+- Plain-text Password Demo (`admin123` — nur für Entwicklung!)
+- **TODO (Prod):** Hashed passwords, signed/encrypted cookies, optional 2FA
+
+## Setup & Entwicklung
+
+```powershell
+# Erste Schritte
+git clone https://github.com/herrwurz/ausschussplaner.git
+cd ausschussplaner
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Dependencies
+pip install -e .
+pip install -e ".[dev]"
+
+# Server starten
+python -m uvicorn app.main:app --reload
+# Admin-UI: http://127.0.0.1:8000/admin/login (password: admin123)
+# API Docs: http://127.0.0.1:8000/docs
+
+# Tests
+python -m pytest tests/ -v
+
+# Linting
+python -m ruff check .
+python -m ruff format .
+```
+
 ## Bekannte offene Punkte
 
-- Sitzungsvorschlag-Persistenz (Ergebnisse speichern)
-- Frontend
-- Abwesenheits-Integration in `test_api.py`
+- **Sitzungsvorschlag-Persistenz:** Ergebnisse der `/api/calculate` noch nicht gespeichert
+- **Admin-UI Templating:** HTML noch hardcoded in Routes (→ Jinja2 Template-Engine)
+- **Authentication Pro:** Password-Hashing, Token-Signing, Token-Expiry
+- **Abwesenheits-Integration:** Tests in `test_api.py`
+- **Mobile-Responsive:** Admin-UI ist responsive, aber nicht für sehr kleine Screens optimiert
