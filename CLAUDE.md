@@ -116,6 +116,29 @@ tests/
 - Plain-text Password Demo (`admin123` — nur für Entwicklung!)
 - **TODO (Prod):** Hashed passwords, signed/encrypted cookies, optional 2FA
 
+## Git Workflow
+
+**Branch-Strategie: GitHub Flow (einfach)**
+- `master` = Production (stable)
+- Feature/Bugfix-Branches → Pull Request → Code Review → Merge
+
+```bash
+# Neue Feature starten
+git checkout -b feature/new-feature-name
+# oder: git checkout -b bugfix/fix-name
+# oder: git checkout -b docs/update-docs
+
+# Änderungen committen
+git add ...
+git commit -m "..."
+
+# Branch zu GitHub pushen
+git push -u origin feature/new-feature-name
+
+# Pull Request erstellen & mergen
+# https://github.com/herrwurz/ausschussplaner/compare/feature/new-feature-name
+```
+
 ## Setup & Entwicklung
 
 ```powershell
@@ -135,11 +158,15 @@ python -m uvicorn app.main:app --reload
 # API Docs: http://127.0.0.1:8000/docs
 
 # Tests
-python -m pytest tests/ -v
+python -m pytest tests/ -v --cov=app
 
 # Linting
 python -m ruff check .
 python -m ruff format .
+
+# Docker
+docker-compose up
+# Server: http://localhost:8000
 ```
 
 ## Bekannte offene Punkte
