@@ -1,32 +1,16 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
 .venv/
-venv/
-env/
-
-# Datenbank
-*.db
-*.sqlite
-*.sqlite3
-
-# Test / Coverage
+__pycache__/
+*.pyc
 .pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
 .ruff_cache/
-
-# Env
+*.db
 .env
 .env.local
-
-# IDE
-.idea/
-.vscode/
-*.swp
-.DS_Store
+frontend-react/
+frontend/
+app/admin.py
+.coverage
+ausschussplaner.egg-info/
+dist/
+build/
+*.egg-info/
