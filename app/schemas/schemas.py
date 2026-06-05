@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.models.enums import (
     AbwesenheitsArt,
     AusschussTyp,
+    Partei,
     Rolle,
     TerminStatus,
     Wochentag,
@@ -40,6 +41,7 @@ class PersonBase(BaseModel):
     vorname: str = Field(min_length=1, max_length=100)
     nachname: str = Field(min_length=1, max_length=100)
     titel: str = ""
+    partei: Partei | None = None
     gremium: str = ""
     email: str = ""
     aktiv: bool = True
@@ -53,6 +55,7 @@ class PersonUpdate(BaseModel):
     vorname: str | None = None
     nachname: str | None = None
     titel: str | None = None
+    partei: Partei | None = None
     gremium: str | None = None
     email: str | None = None
     aktiv: bool | None = None

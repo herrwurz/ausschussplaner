@@ -52,3 +52,14 @@ class TerminStatus(str, enum.Enum):
     ALTERNATIV = "alternativ"                # Obmann + Stv. da, aber unter Quorum
     OBMANN_DA = "obmann_da"                  # nur Obmann da
     NICHT_BESCHLUSSFAEHIG = "nicht_beschlussfähig"
+
+
+class Partei(str, enum.Enum):
+    """Österreichische Parteien."""
+
+    SPOE = "SPÖ"
+    OEVP = "ÖVP"
+    GRUENE = "Die Grünen"
+    FPOE = "FPÖ"
+    NEOS = "NEOS"
+    KPOE = "KPÖ"

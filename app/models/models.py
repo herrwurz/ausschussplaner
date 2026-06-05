@@ -31,6 +31,7 @@ from app.db.base import Base
 from app.models.enums import (
     AbwesenheitsArt,
     AusschussTyp,
+    Partei,
     Rolle,
     TerminStatus,
     Wochentag,
@@ -46,8 +47,12 @@ class Person(Base):
     vorname: Mapped[str] = mapped_column(String(100))
     nachname: Mapped[str] = mapped_column(String(100))
     titel: Mapped[str] = mapped_column(String(50), default="")
+    partei: Mapped[str | None] = mapped_column(String(50), nullable=True)
     gremium: Mapped[str] = mapped_column(String(100), default="")
     email: Mapped[str] = mapped_column(String(200), default="")
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    invite_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    invite_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     aktiv: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

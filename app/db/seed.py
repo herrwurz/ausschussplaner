@@ -15,6 +15,7 @@ Ausführung:  python -m app.db.seed
 """
 from __future__ import annotations
 
+from app.core.security import hash_password
 from app.db.base import Base, SessionLocal, engine
 from app.models.enums import AusschussTyp, Rolle, Wochentag
 from app.models.models import (
@@ -257,10 +258,22 @@ def seed_data(db=None) -> None:
                 seen.add(pid)
                 db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
+        # Test-Person für Person Portal
+        test_person = Person(
+            vorname="Test",
+            nachname="Person",
+            email="test@example.com",
+            password_hash=hash_password("test123"),
+            gremium="Demo",
+            aktiv=True,
+        )
+        db.add(test_person)
+
         db.commit()
         aktiv = sum(1 for p in PERSONS_DATA if p[4])
         print(f"✅ Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
               f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschüsse")
+        print(f"💡 Test Person Portal: test@example.com / test123")
     finally:
         if should_close:
             db.close()
