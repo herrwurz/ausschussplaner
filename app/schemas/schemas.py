@@ -237,3 +237,21 @@ class AgendaTransferResult(BaseModel):
     uebersprungen: int   # bereits vorhandene Mitgliedschaften
     quelle_deaktiviert: bool
     verfuegbarkeit_kopiert: bool
+
+
+# ─────────────────── Sitzungsvorschlag (Persistierung) ────────────────
+class SitzungsvorschlagOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    ausschuss_id: int
+    woche: int
+    wochentag: Wochentag
+    start_minute: int
+    end_minute: int
+    anwesend_count: int
+    mitglieder_count: int
+    quote: int
+    obmann_da: bool
+    stv_da: bool
+    status: TerminStatus
+    fehlende: str

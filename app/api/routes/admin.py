@@ -1,10 +1,12 @@
 """Admin Web-UI Routes."""
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from html import escape
 from urllib.parse import urlparse
+import os
 
 from app.db.base import get_db
 from app.models.models import Person, Ausschuss, Jahresplan, Abwesenheit, Mitgliedschaft, Sitzungsregel, Verfuegbarkeit
@@ -13,6 +15,10 @@ from app.models.enums import AbwesenheitsArt, Rolle, Wochentag
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 ADMIN_PASSWORD = "admin123"
+
+# Template-Setup: suche templates/ im Root-Verzeichnis
+template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "templates")
+templates = Jinja2Templates(directory=template_dir)
 
 
 def escape_html(text: str) -> str:
