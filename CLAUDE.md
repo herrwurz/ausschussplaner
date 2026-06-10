@@ -169,10 +169,113 @@ docker-compose up
 # Server: http://localhost:8000
 ```
 
+## Agent Core & Verification Workflow
+
+### 1. Context & Rule Alignment
+- **Style Guide Enforcement:** Für alle UI/Layout/Styling-Änderungen: Strikt die Blau-Gelb-Theme-Regeln anwenden (siehe `App.css`). Keine willkürlichen Color-Codes.
+- **Anti-Sycophancy Directive:** Technische Korrektheit über Compliance. Wenn User-Request zu Architectural Flaws führt:
+  1. Objekt erheben
+  2. Technische Trade-offs erklären
+  3. Korrekte Alternative vorschlagen
+
+### 2. Operational Routine (jeder Eintrag)
+1. **Read & Map:** Vor Code-Änderungen: Welche Dateien & Dependencies sind betroffen?
+2. **Verify State:** DB-Schema, API-Contracts, Feature-Flags nicht "merken" → aktuelle Konfiguration prüfen
+3. **Draft & Review:** Self-Review gegen "Code Quality Standards" vor Output
+
+---
+
+## Technical & Code Quality Standards
+
+### Architecture & State Management (Backend)
+- **Separation of Concerns:** Business-Logic in `services/`, DB-Logic in `models/`, API-Routes nur Orchestrierung
+- **Entkopplung:** `scheduler.py` hat KEINEN DB-Import. Data Flow: Route → Service → Engine → Response
+- **Error Handling:** Jeden API-Call, DB-Query mit explizitem `try/except`, beschreibender Message, HTTP-Status
+- **Transaktionen:** SQLAlchemy Sessions: `db.commit()` am Ende, `db.rollback()` im Error-Path
+
+### Frontend State & Data Flow (React)
+- **Unidirektional:** Keine bidirektionalen Bindings. State → Props → onChange → setState
+- **JWT Token Management:** localStorage-basiert, Bearer-Header in jedem authenticated Request
+- **Error Boundaries:** Async Operations (fetch, API) haben `try/catch`, Fallback UI, Benutzer-Feedback
+
+### Code Style & Formatting
+- **Python:** Ruff lint + format, MyPy type-checking obligatorisch
+- **React/JS:** Prefer explizite Types (wenn TypeScript), avoid `any`
+- **Simplicity Over Cleverness:** Lesbar vor Elegant. Keine über-engineered Abstractions für 3-liner-Use-Cases
+- **Naming:** Deutsche Variablen-Namen OK (Domain: österr. Gemeinden), aber konsistent (nicht mischen `person` + `person_`)
+
+### UI & Styling Execution
+- **Blau-Gelb-Theme:** Design-Tokens nur aus `App.css` CSS-Variablen (`:root`)
+  - Primary: `#1e3a8a` (dark) → `#2563eb` (light)
+  - Accent: `#fbbf24` (gold)
+  - Shadows, Radius via `var(--shadow)`, `var(--shadow-lg)`
+- **Keine Magic Numbers:** Padding, Margin via Tailwind / CSS-Var, nicht `padding: 14.5px`
+- **Responsive:** Mobile-first, Breakpoints bei 768px, Test auf `localhost:5173` (dev) + Docker (prod)
+
+### Testing Standards
+- **Unit Tests:** `services/` (Business-Logic), `scheduler.py` (Engine)
+- **Integration Tests:** `test_person_portal.py` (Auth-Flow), `test_api.py` (CRUD + edge-cases)
+- **Coverage Target:** >70% für kritische Paths (Auth, Calculation, Person-Portal)
+- **Fixtures:** DB-Session Per-Test (conftest.py), kein Shared State
+
+---
+
+## Development & Environment Commands
+
+### Backend (Python)
+```powershell
+# Tests ausführen
+python -m pytest tests/ -v
+python -m pytest tests/test_person_portal.py -v  # Person Portal Tests
+python -m pytest tests/test_api.py -v             # API Tests
+
+# Coverage
+python -m pytest tests/ --cov=app --cov-report=html
+
+# Linting
+python -m ruff check .
+python -m ruff format .
+python -m mypy app/
+
+# Server
+python -m uvicorn app.main:app --reload
+```
+
+### Frontend (React/Node)
+```powershell
+# Dev Server (Vite)
+cd frontend
+npm run dev  # http://localhost:5173
+
+# Production Build
+npm run build
+
+# Linting (wenn ESLint eingerichtet)
+npm run lint
+
+# Tests (wenn Jest eingerichtet)
+npm run test
+```
+
+### Docker
+```powershell
+# Build & Start
+docker-compose build --no-cache
+docker-compose up
+
+# Logs
+docker-compose logs -f api-1
+
+# Clean (Remove Volumes)
+docker-compose down -v
+```
+
+---
+
 ## Bekannte offene Punkte
 
 - **Sitzungsvorschlag-Persistenz:** Ergebnisse der `/api/calculate` noch nicht gespeichert
 - **Admin-UI Templating:** HTML noch hardcoded in Routes (→ Jinja2 Template-Engine)
-- **Authentication Pro:** Password-Hashing, Token-Signing, Token-Expiry
-- **Abwesenheits-Integration:** Tests in `test_api.py`
-- **Mobile-Responsive:** Admin-UI ist responsive, aber nicht für sehr kleine Screens optimiert
+- **Email-Service (fastapi-mail):** Dependency noch nicht zuverlässig in Docker, Invitations nur im Code-Path
+- **Token-Expiry:** JWT nur 24h, Refresh-Token noch nicht implementiert
+- **Mobile-Responsive:** Admin-UI responsive, aber < 320px Screens nicht optimiert

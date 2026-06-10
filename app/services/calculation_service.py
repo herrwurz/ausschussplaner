@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.enums import AusschussTyp, TerminStatus, Wochentag
-from app.models.models import Ausschuss, Mitgliedschaft, Person, Sitzungsregel
+from app.models.models import Ausschuss, Mitgliedschaft, Person, Sitzungsregel, Sitzungsvorschlag
 from app.schemas.schemas import (
     AusschussAnalyse,
     BerechnungRequest,
@@ -184,3 +184,35 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
             "kritisch": krit_total,
         },
     )
+
+
+def save_calculation_results(db: Session, response: BerechnungResponse) -> int:
+    """Speichert alle Sitzungsvorschläge aus dem Berechnungsergebnis in der DB.
+
+    Löscht zuerst alte Vorschläge und speichert dann neue.
+    Returns: Anzahl gespeicherter Vorschläge
+    """
+    db.query(Sitzungsvorschlag).delete()
+
+    saved_count = 0
+    for analyse in response.analysen:
+        for slot in analyse.beste_je_tag:
+            vorschlag = Sitzungsvorschlag(
+                ausschuss_id=slot.ausschuss_id,
+                woche=slot.woche,
+                wochentag=slot.wochentag,
+                start_minute=int(slot.start.split(":")[0]) * 60 + int(slot.start.split(":")[1]),
+                end_minute=int(slot.ende.split(":")[0]) * 60 + int(slot.ende.split(":")[1]),
+                anwesend_count=slot.anwesend,
+                mitglieder_count=slot.mitglieder,
+                quote=slot.quote,
+                obmann_da=slot.obmann_da,
+                stv_da=slot.stv_da,
+                status=slot.status,
+                fehlende=", ".join(slot.fehlende),
+            )
+            db.add(vorschlag)
+            saved_count += 1
+
+    db.commit()
+    return saved_count

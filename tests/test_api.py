@@ -9,7 +9,9 @@ def test_health(client):
 
 
 def test_create_and_list_person(client):
-    r = client.post("/api/persons", json={"vorname": "Max", "nachname": "Muster"})
+    import uuid
+    email = f"max{uuid.uuid4().hex[:8]}@test.de"
+    r = client.post("/api/persons", json={"vorname": "Max", "nachname": "Muster", "email": email})
     assert r.status_code == 201
     pid = r.json()["id"]
     assert r.json()["name"] == "Max Muster"
@@ -137,3 +139,35 @@ def test_transfer_agenda_skips_duplicates(client):
         "von_person_id": quelle, "zu_person_id": ziel}).json()
     assert r["uebertragene_mitgliedschaften"] == 0
     assert r["uebersprungen"] == 1
+
+
+def test_calculation_saves_results(client):
+    """Test: Berechnung speichert Sitzungsvorschläge in DB."""
+    ids = []
+    for i, rolle in enumerate(["Obmann", "Mitglied", "Mitglied"]):
+        pid = client.post("/api/persons", json={"vorname": f"P{i}", "nachname": "X"}).json()["id"]
+        client.put(f"/api/persons/{pid}/verfuegbarkeit", json={"items": [
+            {"wochentag": "Do", "stunde": 16, "verfuegbar": True},
+            {"wochentag": "Do", "stunde": 17, "verfuegbar": True},
+        ]})
+        ids.append((pid, rolle))
+
+    client.post("/api/committees", json={
+        "name": "CalcSave", "typ": "poly",
+        "mitglieder": [{"person_id": p, "rolle": r} for p, r in ids],
+    })
+
+    r = client.post("/api/calculate", json={
+        "planungswochen": 1, "freitag_modus": "nein", "max_alternativen": 5,
+    })
+    assert r.status_code == 200
+    data = r.json()
+    saved_count = data["zusammenfassung"].get("gespeicherte_vorschlaege", 0)
+    assert saved_count > 0
+
+
+def test_get_saved_results(client):
+    """Test: GET /api/calculate/results gibt gespeicherte Vorschläge zurück."""
+    r = client.get("/api/calculate/results")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)

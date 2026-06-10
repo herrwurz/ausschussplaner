@@ -15,6 +15,7 @@ Ausführung:  python -m app.db.seed
 """
 from __future__ import annotations
 
+from app.core.security import hash_password
 from app.db.base import Base, SessionLocal, engine
 from app.models.enums import AusschussTyp, Rolle, Wochentag
 from app.models.models import (
@@ -28,6 +29,9 @@ from app.models.models import (
 SLOTS = [7, 16, 17, 18, 19]
 DAYS = [Wochentag.MO, Wochentag.DI, Wochentag.MI, Wochentag.DO, Wochentag.FR]
 J, N = True, False
+
+# Partai-Zuordnungen (zyklisch vergeben)
+PARTEIEN = ["SPÖ", "ÖVP", "Die Grünen", "FPÖ", "NEOS", "KPÖ"]
 
 # (key, vorname, nachname, gremium, aktiv, [Mo,Di,Mi,Do,Fr] je 5 Slots)
 PERSONS_DATA = [
@@ -232,8 +236,9 @@ def seed_data(db=None) -> None:
 
         # Personen + Verfügbarkeiten
         key_to_id: dict[str, int] = {}
-        for key, vor, nach, gremium, aktiv, matrix in PERSONS_DATA:
-            person = Person(vorname=vor, nachname=nach, gremium=gremium, aktiv=aktiv)
+        for idx, (key, vor, nach, gremium, aktiv, matrix) in enumerate(PERSONS_DATA):
+            partai = PARTEIEN[idx % len(PARTEIEN)]
+            person = Person(vorname=vor, nachname=nach, partei=partai, gremium=gremium, aktiv=aktiv)
             db.add(person)
             db.flush()
             key_to_id[key] = person.id
@@ -257,10 +262,42 @@ def seed_data(db=None) -> None:
                 seen.add(pid)
                 db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
+        # Test-Person für Person Portal
+        test_person = Person(
+            vorname="Test",
+            nachname="Person",
+            email="test@example.com",
+            password_hash=hash_password("test123"),
+            gremium="Demo",
+            aktiv=True,
+        )
+        db.add(test_person)
+        db.flush()
+
+        # Add test person to first committee
+        if db.query(Ausschuss).count() > 0:
+            first_committee = db.query(Ausschuss).first()
+            db.add(Mitgliedschaft(
+                person_id=test_person.id,
+                ausschuss_id=first_committee.id,
+                rolle=Rolle.MITGLIED
+            ))
+
+        # Add some verfügbarkeiten for test person
+        for day in DAYS:
+            for hour in [9, 10, 14, 15, 16]:
+                db.add(Verfuegbarkeit(
+                    person_id=test_person.id,
+                    wochentag=day,
+                    stunde=hour,
+                    verfuegbar=True
+                ))
+
         db.commit()
         aktiv = sum(1 for p in PERSONS_DATA if p[4])
         print(f"✅ Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
               f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschüsse")
+        print(f"💡 Test Person Portal: test@example.com / test123")
     finally:
         if should_close:
             db.close()

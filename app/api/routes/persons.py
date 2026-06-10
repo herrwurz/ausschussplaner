@@ -130,3 +130,29 @@ def set_verfuegbarkeit(
     return db.scalars(
         select(Verfuegbarkeit).where(Verfuegbarkeit.person_id == person_id)
     ).all()
+
+
+# ── Einladungs-Email ──
+@router.post("/{person_id}/send-invitation")
+def send_invitation(person_id: int, db: Session = Depends(get_db)):
+    """Generiert Einladungs-Token und sendet Email."""
+    import asyncio
+    from app.services.email_service import generate_invite_token, send_invitation_email
+
+    person = db.get(Person, person_id)
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
+
+    if not person.email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Person hat keine Email-Adresse")
+
+    token, expires = generate_invite_token()
+    person.invite_token = token
+    person.invite_expires = expires
+    db.commit()
+
+    try:
+        asyncio.run(send_invitation_email(person.email, token, f"{person.vorname} {person.nachname}"))
+        return {"message": f"Einladungs-Email an {person.email} gesendet"}
+    except Exception as e:
+        return {"message": f"Email versand fehlgeschlagen: {str(e)}", "token": token}

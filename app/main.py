@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.admin import create_admin
-from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, admin
+from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, admin, person
 from app.core.config import get_settings
 from app.db.base import Base, engine, SessionLocal
 from app.db.seed import seed_data
@@ -57,10 +56,8 @@ app.include_router(absences.router, prefix="/api")
 app.include_router(rules.router, prefix="/api")
 app.include_router(calculation.router, prefix="/api")
 app.include_router(jahresplan.router, prefix="/api")
+app.include_router(person.router, prefix="/api")
 app.include_router(admin.router)
-
-# SQLAdmin auskommentiert - verwende stattdessen /admin Router
-# create_admin(app)
 
 
 @app.get("/health", tags=["System"])

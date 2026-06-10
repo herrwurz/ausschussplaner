@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.models.enums import (
     AbwesenheitsArt,
     AusschussTyp,
+    Partei,
     Rolle,
     TerminStatus,
     Wochentag,
@@ -40,6 +41,7 @@ class PersonBase(BaseModel):
     vorname: str = Field(min_length=1, max_length=100)
     nachname: str = Field(min_length=1, max_length=100)
     titel: str = ""
+    partei: Partei | None = None
     gremium: str = ""
     email: str = ""
     aktiv: bool = True
@@ -53,6 +55,7 @@ class PersonUpdate(BaseModel):
     vorname: str | None = None
     nachname: str | None = None
     titel: str | None = None
+    partei: Partei | None = None
     gremium: str | None = None
     email: str | None = None
     aktiv: bool | None = None
@@ -237,3 +240,21 @@ class AgendaTransferResult(BaseModel):
     uebersprungen: int   # bereits vorhandene Mitgliedschaften
     quelle_deaktiviert: bool
     verfuegbarkeit_kopiert: bool
+
+
+# ─────────────────── Sitzungsvorschlag (Persistierung) ────────────────
+class SitzungsvorschlagOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    ausschuss_id: int
+    woche: int
+    wochentag: Wochentag
+    start_minute: int
+    end_minute: int
+    anwesend_count: int
+    mitglieder_count: int
+    quote: int
+    obmann_da: bool
+    stv_da: bool
+    status: TerminStatus
+    fehlende: str
