@@ -8,9 +8,14 @@ from html import escape
 from urllib.parse import urlparse
 import os
 
+from datetime import date, datetime
 from app.db.base import get_db
-from app.models.models import Person, Ausschuss, Jahresplan, Abwesenheit, Mitgliedschaft, Sitzungsregel, Verfuegbarkeit
-from app.models.enums import AbwesenheitsArt, Rolle, Wochentag
+from app.models.models import (
+    Person, Ausschuss, Jahresplan, Abwesenheit, Mitgliedschaft, Sitzungsregel, Verfuegbarkeit,
+    Gemeinderatsperiode, PeriodePerson
+)
+from app.models.enums import AbwesenheitsArt, Rolle, Wochentag, AusschussTyp
+from math import ceil
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -51,6 +56,15 @@ def error_page(title: str, message: str, back_url: str) -> str:
 
 def is_logged_in(request: Request) -> bool:
     return request.cookies.get("admin_session") == "logged_in"
+
+
+def calculate_quorum(member_count: int) -> int:
+    """Calculate quorum as 50% of members + Obmann must be present.
+
+    Returns: ceil(total_members / 2) — minimum members needed for quorum.
+    Obmann is mandatory (separate requirement).
+    """
+    return ceil(member_count / 2)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -97,10 +111,10 @@ async def dashboard(request: Request):
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>body{background:#f5f7fa}.sidebar{background:#2c3e50;color:white;padding:20px;min-height:100vh}.sidebar a{color:white;display:block;padding:10px;text-decoration:none}.card{margin:10px 0}</style>
 </head><body><div class="row g-0"><div class="col-md-3 sidebar">
-<h4>AusschussPlaner</h4><a href="/admin">Dashboard</a><a href="/admin/personen">Personen</a><a href="/admin/ausschuesse">Ausschuesse</a><a href="/admin/abwesenheiten">Abwesenheiten</a><a href="/admin/verfuegbarkeiten">Verfügbarkeiten</a><a href="/admin/jahrespläne">Jahrespläne</a><a href="/admin/sitzungsregeln">Sitzungsregeln</a><a href="/admin/logout">Logout</a>
+<h4>AusschussPlaner</h4><a href="/admin">Dashboard</a><a href="/admin/perioden">Perioden</a><a href="/admin/personen">Personen</a><a href="/admin/ausschuesse">Ausschuesse</a><a href="/admin/abwesenheiten">Abwesenheiten</a><a href="/admin/verfuegbarkeiten">Verfügbarkeiten</a><a href="/admin/jahrespläne">Jahrespläne</a><a href="/admin/sitzungsregeln">Sitzungsregeln</a><a href="/admin/logout">Logout</a>
 </div><div class="col-md-9 p-4">
 <h1>Dashboard</h1>
-<div class="row"><div class="col-md-6"><div class="card"><div class="card-body"><h5 class="card-title">Stammdaten</h5><ul class="list-unstyled"><li><a href="/admin/personen">Personen verwalten</a></li><li><a href="/admin/ausschuesse">Ausschuesse verwalten</a></li><li><a href="/admin/abwesenheiten">Abwesenheiten verwalten</a></li></ul></div></div></div><div class="col-md-6"><div class="card"><div class="card-body"><h5 class="card-title">Planung</h5><ul class="list-unstyled"><li><a href="/admin/jahrespläne">Jahrespläne</a></li><li><a href="/admin/sitzungsregeln">Sitzungsregeln</a></li></ul></div></div></div></div>
+<div class="row"><div class="col-md-6"><div class="card"><div class="card-body"><h5 class="card-title">Perioden & Stammdaten</h5><ul class="list-unstyled"><li><a href="/admin/perioden">Perioden verwalten</a></li><li><a href="/admin/personen">Personen verwalten</a></li><li><a href="/admin/ausschuesse">Ausschuesse verwalten</a></li><li><a href="/admin/abwesenheiten">Abwesenheiten verwalten</a></li></ul></div></div></div><div class="col-md-6"><div class="card"><div class="card-body"><h5 class="card-title">Planung</h5><ul class="list-unstyled"><li><a href="/admin/jahrespläne">Jahrespläne</a></li><li><a href="/admin/sitzungsregeln">Sitzungsregeln</a></li></ul></div></div></div></div>
 </div></div></body></html>"""
 
 
@@ -109,7 +123,27 @@ async def personen_list(request: Request, db: Session = Depends(get_db)):
     if not is_logged_in(request):
         return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
 
-    persons = db.query(Person).all()
+    filter_param = request.query_params.get("filter", "all")
+
+    query = db.query(Person)
+    if filter_param == "active":
+        query = query.filter(Person.aktiv == True)
+    elif filter_param == "inactive":
+        query = query.filter(Person.aktiv == False)
+
+    persons = query.all()
+
+    # Button styling based on active filter
+    alle_class = "btn btn-sm btn-primary active" if filter_param == "all" else "btn btn-sm btn-outline-primary"
+    aktiv_class = "btn btn-sm btn-primary active" if filter_param == "active" else "btn btn-sm btn-outline-primary"
+    inaktiv_class = "btn btn-sm btn-primary active" if filter_param == "inactive" else "btn btn-sm btn-outline-primary"
+
+    filter_buttons = f"""<div class="btn-group mb-4" role="group">
+    <a href="/admin/personen?filter=all" class="{alle_class}">Alle</a>
+    <a href="/admin/personen?filter=active" class="{aktiv_class}">Aktiv</a>
+    <a href="/admin/personen?filter=inactive" class="{inaktiv_class}">Inaktiv</a>
+</div>"""
+
     rows = "".join([
         f"<tr><td>{p.id}</td><td>{escape_html(p.vorname)} {escape_html(p.nachname)}</td><td>{escape_html(p.gremium or '-')}</td><td>{'Aktiv' if p.aktiv else 'Inaktiv'}</td><td><a href='/admin/personen/{p.id}/edit' class='btn btn-sm btn-warning'>Edit</a> <a href='/admin/personen/{p.id}/delete' class='btn btn-sm btn-danger' onclick=\"return confirm('Delete?')\">Delete</a></td></tr>"
         for p in persons
@@ -122,6 +156,7 @@ async def personen_list(request: Request, db: Session = Depends(get_db)):
 <h4>AusschussPlaner</h4><a href="/admin">Dashboard</a><a href="/admin/personen">Personen</a><a href="/admin/ausschuesse">Ausschuesse</a><a href="/admin/abwesenheiten">Abwesenheiten</a><a href="/admin/verfuegbarkeiten">Verfügbarkeiten</a><a href="/admin/jahrespläne">Jahrespläne</a><a href="/admin/sitzungsregeln">Sitzungsregeln</a><a href="/admin/logout">Logout</a>
 </div><div class="col-md-9 p-4">
 <div class="d-flex justify-content-between mb-4"><h1>Personen ({len(persons)})</h1><a href="/admin/personen/new" class="btn btn-primary">New</a></div>
+{filter_buttons}
 <table class="table"><thead><tr><th>ID</th><th>Name</th><th>Gremium</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rows}</tbody></table>
 </div></div></body></html>"""
 
@@ -238,7 +273,28 @@ async def personen_delete(person_id: int, request: Request, db: Session = Depend
 async def ausschuesse_list(request: Request, db: Session = Depends(get_db)):
     if not is_logged_in(request):
         return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
-    ausschuesse = db.query(Ausschuss).all()
+
+    filter_param = request.query_params.get("filter", "all")
+
+    query = db.query(Ausschuss)
+    if filter_param == "active":
+        query = query.filter(Ausschuss.aktiv == True)
+    elif filter_param == "inactive":
+        query = query.filter(Ausschuss.aktiv == False)
+
+    ausschuesse = query.all()
+
+    # Button styling based on active filter
+    alle_class = "btn btn-sm btn-primary active" if filter_param == "all" else "btn btn-sm btn-outline-primary"
+    aktiv_class = "btn btn-sm btn-primary active" if filter_param == "active" else "btn btn-sm btn-outline-primary"
+    inaktiv_class = "btn btn-sm btn-primary active" if filter_param == "inactive" else "btn btn-sm btn-outline-primary"
+
+    filter_buttons = f"""<div class="btn-group mb-4" role="group">
+    <a href="/admin/ausschuesse?filter=all" class="{alle_class}">Alle</a>
+    <a href="/admin/ausschuesse?filter=active" class="{aktiv_class}">Aktiv</a>
+    <a href="/admin/ausschuesse?filter=inactive" class="{inaktiv_class}">Inaktiv</a>
+</div>"""
+
     rows = "".join([
         f"<tr><td>{a.id}</td><td>{escape_html(a.name)}</td><td>{escape_html(a.turnus)}</td><td>{'Aktiv' if a.aktiv else 'Inaktiv'}</td><td><a href='/admin/ausschuesse/{a.id}/mitgliedschaften' class='btn btn-sm btn-info'>Members</a> <a href='/admin/ausschuesse/{a.id}/edit' class='btn btn-sm btn-warning'>Edit</a> <a href='/admin/ausschuesse/{a.id}/delete' class='btn btn-sm btn-danger' onclick=\"return confirm('Delete?')\">Delete</a></td></tr>"
         for a in ausschuesse
@@ -250,6 +306,7 @@ async def ausschuesse_list(request: Request, db: Session = Depends(get_db)):
 <h4>AusschussPlaner</h4><a href="/admin">Dashboard</a><a href="/admin/personen">Personen</a><a href="/admin/ausschuesse">Ausschuesse</a><a href="/admin/abwesenheiten">Abwesenheiten</a><a href="/admin/verfuegbarkeiten">Verfügbarkeiten</a><a href="/admin/jahrespläne">Jahrespläne</a><a href="/admin/sitzungsregeln">Sitzungsregeln</a><a href="/admin/logout">Logout</a>
 </div><div class="col-md-9 p-4">
 <h1>Ausschuesse ({len(ausschuesse)})</h1>
+{filter_buttons}
 <table class="table"><thead><tr><th>ID</th><th>Name</th><th>Turnus</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rows}</tbody></table>
 </div></div></body></html>"""
 
@@ -686,7 +743,28 @@ async def sitzungsregeln_update(request: Request, db: Session = Depends(get_db))
 async def jahrespläne_list(request: Request, db: Session = Depends(get_db)):
     if not is_logged_in(request):
         return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
-    jahrespläne = db.query(Jahresplan).order_by(Jahresplan.jahr.desc()).all()
+
+    filter_param = request.query_params.get("filter", "all")
+
+    query = db.query(Jahresplan)
+    if filter_param == "active":
+        query = query.filter(Jahresplan.aktiv == True)
+    elif filter_param == "inactive":
+        query = query.filter(Jahresplan.aktiv == False)
+
+    jahrespläne = query.order_by(Jahresplan.jahr.desc()).all()
+
+    # Button styling based on active filter
+    alle_class = "btn btn-sm btn-primary active" if filter_param == "all" else "btn btn-sm btn-outline-primary"
+    aktiv_class = "btn btn-sm btn-primary active" if filter_param == "active" else "btn btn-sm btn-outline-primary"
+    inaktiv_class = "btn btn-sm btn-primary active" if filter_param == "inactive" else "btn btn-sm btn-outline-primary"
+
+    filter_buttons = f"""<div class="btn-group mb-4" role="group">
+    <a href="/admin/jahrespläne?filter=all" class="{alle_class}">Alle</a>
+    <a href="/admin/jahrespläne?filter=active" class="{aktiv_class}">Aktiv</a>
+    <a href="/admin/jahrespläne?filter=inactive" class="{inaktiv_class}">Inaktiv</a>
+</div>"""
+
     rows = "".join([
         f"<tr><td>{jp.jahr}</td><td>{escape_html(jp.bezeichnung)}</td><td>{'Aktiv' if jp.aktiv else 'Inaktiv'}</td><td><a href='/admin/jahrespläne/{jp.id}/edit' class='btn btn-sm btn-warning'>Edit</a> <a href='/admin/jahrespläne/{jp.id}/delete' class='btn btn-sm btn-danger' onclick=\"return confirm('Delete?')\">Delete</a></td></tr>"
         for jp in jahrespläne
@@ -698,6 +776,7 @@ async def jahrespläne_list(request: Request, db: Session = Depends(get_db)):
 <h4>AusschussPlaner</h4><a href="/admin">Dashboard</a><a href="/admin/personen">Personen</a><a href="/admin/ausschuesse">Ausschuesse</a><a href="/admin/abwesenheiten">Abwesenheiten</a><a href="/admin/verfuegbarkeiten">Verfügbarkeiten</a><a href="/admin/jahrespläne">Jahrespläne</a><a href="/admin/sitzungsregeln">Sitzungsregeln</a><a href="/admin/logout">Logout</a>
 </div><div class="col-md-9 p-4">
 <div class="d-flex justify-content-between mb-4"><h1>Jahrespläne ({len(jahrespläne)})</h1><a href="/admin/jahrespläne/new" class="btn btn-primary">New</a></div>
+{filter_buttons}
 <table class="table"><thead><tr><th>Jahr</th><th>Bezeichnung</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rows}</tbody></table>
 </div></div></body></html>"""
 
@@ -791,3 +870,537 @@ async def jahrespläne_delete(jahresplan_id: int, request: Request, db: Session 
         db.delete(jahresplan)
         db.commit()
     return RedirectResponse(url="/admin/jahrespläne", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/perioden", response_class=HTMLResponse)
+async def perioden_list(request: Request, db: Session = Depends(get_db)):
+    """List all periods with person/committee counts."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    filter_param = request.query_params.get("filter", "all")
+
+    query = db.query(Gemeinderatsperiode)
+    if filter_param == "active":
+        query = query.filter(Gemeinderatsperiode.aktiv == True)
+    elif filter_param == "inactive":
+        query = query.filter(Gemeinderatsperiode.aktiv == False)
+
+    perioden = query.order_by(Gemeinderatsperiode.start_jahr.desc()).all()
+
+    # Count personen and committees for each periode
+    periode_persons_count = {}
+    periode_committees_count = {}
+    for periode in perioden:
+        person_count = db.query(PeriodePerson).filter(
+            PeriodePerson.periode_id == periode.id,
+            PeriodePerson.end_datum.is_(None)
+        ).count()
+        committee_count = db.query(Ausschuss).filter(Ausschuss.periode_id == periode.id).count()
+        periode_persons_count[periode.id] = person_count
+        periode_committees_count[periode.id] = committee_count
+
+    return templates.TemplateResponse("perioden.html", {
+        "request": request,
+        "page": "perioden",
+        "perioden": perioden,
+        "periode_persons_count": periode_persons_count,
+        "periode_committees_count": periode_committees_count,
+        "filter_param": filter_param,
+    })
+
+
+@router.get("/perioden/create", response_class=HTMLResponse)
+async def perioden_create_form(request: Request):
+    """Form to create a new period."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    return """<html><head><title>Neue Periode</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head><body><div class="container mt-5"><div class="col-md-6">
+<h1>Neue Periode erstellen</h1>
+<form method="post" action="/admin/perioden/create">
+<div class="mb-3"><label>Name (z.B. P1)</label><input type="text" name="name" class="form-control" required></div>
+<div class="mb-3"><label>Start Jahr</label><input type="number" name="start_jahr" class="form-control" required></div>
+<div class="mb-3"><label>End Jahr</label><input type="number" name="end_jahr" class="form-control" required></div>
+<div class="mb-3"><input type="checkbox" name="aktiv" checked> Aktiv</div>
+<button type="submit" class="btn btn-primary">Erstellen</button> <a href="/admin/perioden" class="btn btn-secondary">Abbrechen</a>
+</form></div></div></body></html>"""
+
+
+@router.post("/perioden/create")
+async def perioden_create(request: Request, db: Session = Depends(get_db)):
+    """Create a new period."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    try:
+        form = await request.form()
+        name = form.get("name", "").strip()
+        start_jahr = int(form.get("start_jahr", 0))
+        end_jahr = int(form.get("end_jahr", 0))
+        aktiv = form.get("aktiv") == "on"
+
+        if not name or start_jahr <= 0 or end_jahr <= 0 or start_jahr > end_jahr:
+            return HTMLResponse(error_page(
+                "Fehler",
+                "Bitte geben Sie gültige Daten ein. Name erforderlich, Start-Jahr <= End-Jahr.",
+                "/admin/perioden/create"
+            ))
+
+        periode = Gemeinderatsperiode(
+            name=name,
+            start_jahr=start_jahr,
+            end_jahr=end_jahr,
+            aktiv=aktiv
+        )
+        db.add(periode)
+        db.commit()
+        return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+    except IntegrityError:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            "Eine Periode mit diesem Namen existiert bereits.",
+            "/admin/perioden/create"
+        ))
+    except ValueError as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ungültige Eingabe: {str(e)}",
+            "/admin/perioden/create"
+        ))
+    except Exception as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ein Fehler ist aufgetreten: {str(e)}",
+            "/admin/perioden/create"
+        ))
+
+
+@router.get("/perioden/{periode_id}", response_class=HTMLResponse)
+async def periode_detail(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Detail page for a period with person and committee management."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+    if not periode:
+        return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+    # Get active personen in period
+    periode_personen = db.query(PeriodePerson).filter(
+        PeriodePerson.periode_id == periode_id,
+        PeriodePerson.end_datum.is_(None)
+    ).all()
+
+    # Get ausschuesse
+    ausschuesse = db.query(Ausschuss).filter(Ausschuss.periode_id == periode_id).all()
+
+    # Get all active persons not yet in period
+    existing_person_ids = {pp.person_id for pp in periode_personen}
+    available_persons = db.query(Person).filter(
+        Person.aktiv == True,
+        ~Person.id.in_(existing_person_ids)
+    ).order_by(Person.nachname).all()
+
+    # Count members per ausschuss
+    ausschuss_member_counts = {}
+    for ausschuss in ausschuesse:
+        count = db.query(Mitgliedschaft).filter(
+            Mitgliedschaft.ausschuss_id == ausschuss.id
+        ).count()
+        ausschuss_member_counts[ausschuss.id] = count
+
+    return templates.TemplateResponse("periode_detail.html", {
+        "request": request,
+        "page": "perioden",
+        "periode": periode,
+        "personen": periode_personen,
+        "personen_count": len(periode_personen),
+        "ausschuesse": ausschuesse,
+        "ausschuesse_count": len(ausschuesse),
+        "ausschuss_member_counts": ausschuss_member_counts,
+        "available_persons": available_persons,
+    })
+
+
+@router.post("/perioden/{periode_id}/person-add")
+async def periode_person_add(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Add a person to a period (start_datum = today)."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    try:
+        periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+        if not periode:
+            return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+        form = await request.form()
+        person_id = int(form.get("person_id", 0))
+        if not person_id:
+            return HTMLResponse(error_page(
+                "Fehler",
+                "Bitte wählen Sie eine Person aus.",
+                f"/admin/perioden/{periode_id}"
+            ))
+
+        # Check if already exists
+        existing = db.query(PeriodePerson).filter(
+            PeriodePerson.periode_id == periode_id,
+            PeriodePerson.person_id == person_id,
+            PeriodePerson.end_datum.is_(None)
+        ).first()
+        if existing:
+            return HTMLResponse(error_page(
+                "Fehler",
+                "Diese Person ist bereits in dieser Periode.",
+                f"/admin/perioden/{periode_id}"
+            ))
+
+        periode_person = PeriodePerson(
+            periode_id=periode_id,
+            person_id=person_id,
+            start_datum=date.today()
+        )
+        db.add(periode_person)
+        db.commit()
+        return RedirectResponse(url=f"/admin/perioden/{periode_id}", status_code=status.HTTP_302_FOUND)
+    except ValueError as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ungültige Eingabe: {str(e)}",
+            f"/admin/perioden/{periode_id}"
+        ))
+    except Exception as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ein Fehler ist aufgetreten: {str(e)}",
+            f"/admin/perioden/{periode_id}"
+        ))
+
+
+@router.get("/perioden/{periode_id}/person/{person_id}/remove")
+async def periode_person_remove(periode_id: int, person_id: int, request: Request, db: Session = Depends(get_db)):
+    """Remove person from period (set end_datum = today) and trigger new Jahresplan variante."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    try:
+        periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+        if not periode:
+            return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+        # Mark person as removed from period
+        periode_person = db.query(PeriodePerson).filter(
+            PeriodePerson.periode_id == periode_id,
+            PeriodePerson.person_id == person_id,
+            PeriodePerson.end_datum.is_(None)
+        ).first()
+        if periode_person:
+            periode_person.end_datum = date.today()
+            periode_person.grund_austritt = "Aus Periode entfernt"
+            db.add(periode_person)
+            db.flush()
+
+            # Remove all memberships for this person in this period
+            memberships_to_remove = db.query(Mitgliedschaft).filter(
+                Mitgliedschaft.periode_id == periode_id,
+                Mitgliedschaft.person_id == person_id
+            ).all()
+
+            affected_ausschuesse_ids = set()
+            for membership in memberships_to_remove:
+                affected_ausschuesse_ids.add(membership.ausschuss_id)
+                db.delete(membership)
+            db.flush()
+
+            # Create new Jahresplan variante for current year
+            current_year = date.today().year
+            latest_jahresplan = db.query(Jahresplan).filter(
+                Jahresplan.periode_id == periode_id,
+                Jahresplan.jahr == current_year
+            ).order_by(Jahresplan.variante.desc()).first()
+
+            if latest_jahresplan:
+                new_variante = latest_jahresplan.variante + 1
+                person_name = db.query(Person).filter(Person.id == person_id).first()
+                person_name_str = f"{person_name.vorname} {person_name.nachname}" if person_name else "Person"
+
+                new_jahresplan = Jahresplan(
+                    periode_id=periode_id,
+                    jahr=current_year,
+                    variante=new_variante,
+                    grund_variante=f"Austritt {person_name_str} - Quorum-Update erforderlich",
+                    aktiv=True
+                )
+                db.add(new_jahresplan)
+                db.flush()
+
+                # Update quorum for affected ausschuesse
+                for ausschuss_id in affected_ausschuesse_ids:
+                    ausschuss = db.query(Ausschuss).filter(Ausschuss.id == ausschuss_id).first()
+                    if ausschuss:
+                        member_count = db.query(Mitgliedschaft).filter(
+                            Mitgliedschaft.ausschuss_id == ausschuss_id,
+                            Mitgliedschaft.periode_id == periode_id
+                        ).count()
+                        if member_count > 0:
+                            new_quorum = calculate_quorum(member_count)
+                            ausschuss.quorum_override = new_quorum
+
+            db.commit()
+
+        return RedirectResponse(url=f"/admin/perioden/{periode_id}", status_code=status.HTTP_302_FOUND)
+    except Exception as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ein Fehler ist aufgetreten: {str(e)}",
+            f"/admin/perioden/{periode_id}"
+        ))
+
+
+@router.get("/perioden/{periode_id}/ausschuss-add", response_class=HTMLResponse)
+async def ausschuss_add_form(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Form to add a new committee to period."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+    if not periode:
+        return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+    typ_options = "".join([f"<option value='{t.value}'>{t.value}</option>" for t in AusschussTyp])
+    return f"""<html><head><title>Neuer Ausschuss</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head><body><div class="container mt-5"><div class="col-md-6">
+<h1>Neuer Ausschuss für Periode {escape_html(periode.name)}</h1>
+<form method="post" action="/admin/perioden/{periode_id}/ausschuss-add">
+<div class="mb-3"><label>Name</label><input type="text" name="name" class="form-control" required></div>
+<div class="mb-3"><label>Typ</label><select name="typ" class="form-select" required>{typ_options}</select></div>
+<div class="mb-3"><label>Turnus</label><input type="text" name="turnus" class="form-control"></div>
+<div class="mb-3"><input type="checkbox" name="aktiv" checked> Aktiv</div>
+<button type="submit" class="btn btn-primary">Erstellen</button> <a href="/admin/perioden/{periode_id}" class="btn btn-secondary">Abbrechen</a>
+</form></div></div></body></html>"""
+
+
+@router.post("/perioden/{periode_id}/ausschuss-add")
+async def ausschuss_add(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Create a new committee for the period."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    try:
+        periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+        if not periode:
+            return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+        form = await request.form()
+        name = form.get("name", "").strip()
+        typ_str = form.get("typ", "").strip()
+        turnus = form.get("turnus", "").strip()
+        aktiv = form.get("aktiv") == "on"
+
+        if not name or not typ_str:
+            return HTMLResponse(error_page(
+                "Fehler",
+                "Name und Typ sind erforderlich.",
+                f"/admin/perioden/{periode_id}/ausschuss-add"
+            ))
+
+        ausschuss = Ausschuss(
+            periode_id=periode_id,
+            name=name,
+            typ=AusschussTyp(typ_str),
+            turnus=turnus or None,
+            aktiv=aktiv
+        )
+        db.add(ausschuss)
+        db.commit()
+        return RedirectResponse(url=f"/admin/perioden/{periode_id}", status_code=status.HTTP_302_FOUND)
+    except ValueError as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ungültige Eingabe: {str(e)}",
+            f"/admin/perioden/{periode_id}/ausschuss-add"
+        ))
+    except Exception as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ein Fehler ist aufgetreten: {str(e)}",
+            f"/admin/perioden/{periode_id}/ausschuss-add"
+        ))
+
+
+@router.get("/perioden/{periode_id}/edit", response_class=HTMLResponse)
+async def periode_edit(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Edit period basic info."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+    if not periode:
+        return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+    checked = "checked" if periode.aktiv else ""
+    return f"""<html><head><title>Edit Periode</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head><body><div class="container mt-5"><div class="col-md-6">
+<h1>Edit Periode</h1>
+<form method="post" action="/admin/perioden/{periode_id}/update">
+<div class="mb-3"><label>Name</label><input type="text" name="name" class="form-control" value="{escape_html(periode.name)}" required></div>
+<div class="mb-3"><label>Start Jahr</label><input type="number" name="start_jahr" class="form-control" value="{periode.start_jahr}" required></div>
+<div class="mb-3"><label>End Jahr</label><input type="number" name="end_jahr" class="form-control" value="{periode.end_jahr}" required></div>
+<div class="mb-3"><input type="checkbox" name="aktiv" {checked}> Aktiv</div>
+<button type="submit" class="btn btn-primary">Update</button> <a href="/admin/perioden" class="btn btn-secondary">Cancel</a>
+</form></div></div></body></html>"""
+
+
+@router.post("/perioden/{periode_id}/update")
+async def periode_update(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Update period basic info."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    try:
+        periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+        if not periode:
+            return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+
+        form = await request.form()
+        periode.name = form.get("name", "").strip()
+        periode.start_jahr = int(form.get("start_jahr", 0))
+        periode.end_jahr = int(form.get("end_jahr", 0))
+        periode.aktiv = form.get("aktiv") == "on"
+
+        db.commit()
+        return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+    except ValueError as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ungültige Eingabe: {str(e)}",
+            f"/admin/perioden/{periode_id}/edit"
+        ))
+    except IntegrityError:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            "Ein Name-Konflikt ist aufgetreten.",
+            f"/admin/perioden/{periode_id}/edit"
+        ))
+    except Exception as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ein Fehler ist aufgetreten: {str(e)}",
+            f"/admin/perioden/{periode_id}/edit"
+        ))
+
+
+@router.get("/perioden/{periode_id}/delete")
+async def periode_delete(periode_id: int, request: Request, db: Session = Depends(get_db)):
+    """Delete a period."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    try:
+        periode = db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.id == periode_id).first()
+        if periode:
+            # Check if has personen or ausschuesse
+            person_count = db.query(PeriodePerson).filter(PeriodePerson.periode_id == periode_id).count()
+            ausschuss_count = db.query(Ausschuss).filter(Ausschuss.periode_id == periode_id).count()
+
+            if person_count > 0 or ausschuss_count > 0:
+                return HTMLResponse(f"""<html><head><title>Fehler</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head><body><div class="container mt-5"><div class="col-md-6">
+<div class="alert alert-danger">
+<h4>Periode kann nicht gelöscht werden</h4>
+<p>Die Periode enthält noch {person_count} Personen und {ausschuss_count} Ausschüsse.</p>
+<p>Bitte entfernen Sie zuerst alle Personen und Ausschüsse.</p>
+</div>
+<a href="/admin/perioden/{periode_id}" class="btn btn-info">Zurück zur Periode</a>
+<a href="/admin/perioden" class="btn btn-secondary">Zur Liste</a>
+</div></div></body></html>""")
+
+            db.delete(periode)
+            db.commit()
+
+        return RedirectResponse(url="/admin/perioden", status_code=status.HTTP_302_FOUND)
+    except Exception as e:
+        db.rollback()
+        return HTMLResponse(error_page(
+            "Fehler",
+            f"Ein Fehler ist aufgetreten: {str(e)}",
+            "/admin/perioden"
+        ))
+
+
+@router.get("/sitzungen", response_class=HTMLResponse)
+async def sitzungen(request: Request, month: int = None, year: int = None, db: Session = Depends(get_db)):
+    """Zeige alle Sitzungstermine aller Ausschüsse in einer Tabellenansicht."""
+    if not is_logged_in(request):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
+
+    from datetime import datetime, timedelta
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.now()
+    if month is None:
+        month = now.month
+    if year is None:
+        year = now.year
+
+    # Erstelle Datum für Monatsanfang
+    month_start = datetime(year, month, 1)
+    month_end = month_start + relativedelta(months=1) - timedelta(days=1)
+
+    # Hole alle Ausschüsse
+    ausschuesse = db.query(Ausschuss).filter(Ausschuss.aktiv == True).order_by(Ausschuss.name).all()
+
+    # Erstelle Dummy-Sitzungsdaten für diesen Monat
+    sitzungen = []
+    wochentage_map = {0: "Mo", 1: "Di", 2: "Mi", 3: "Do", 4: "Fr", 5: "Sa", 6: "So"}
+
+    for ausschuss in ausschuesse:
+        # Erzeuge 1-4 Sitzungen pro Ausschuss im Monat
+        for week in range(1, 5):
+            date = month_start + timedelta(weeks=week-1, days=ausschuss.id % 3)
+            if date.month == month and date.year == year:
+                hour = 10 + (ausschuss.id % 5)
+                sitzungen.append({
+                    "id": f"{ausschuss.id}-{week}",
+                    "ausschuss_id": ausschuss.id,
+                    "ausschuss_name": ausschuss.name,
+                    "typ": ausschuss.typ,
+                    "datum": date.strftime("%d.%m.%Y"),
+                    "wochentag": wochentage_map[date.weekday()],
+                    "uhrzeit": f"{hour:02d}:00",
+                    "ort": "Gemeindehaus",
+                    "beschlussfaehig": week % 2 == 0,
+                })
+
+    # Sortiere nach Datum
+    sitzungen.sort(key=lambda x: x["datum"])
+
+    # Formatiere Monat für Anzeige
+    month_name = datetime(year, month, 1).strftime("%B %Y")
+    if month_name.startswith("0"):  # Falls Probleme mit Formatierung
+        month_name = ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                      "Juli", "August", "September", "Oktober", "November", "Dezember"][month-1] + f" {year}"
+
+    return templates.TemplateResponse("sitzungen.html", {
+        "request": request,
+        "page": "sitzungen",
+        "sitzungen": sitzungen,
+        "current_month": month_name,
+    })

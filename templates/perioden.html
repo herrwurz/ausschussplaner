@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Perioden - AusschussPlaner{% endblock %}
+
+{% block extra_css %}
+<style>
+    .period-card {
+        border-left: 4px solid var(--primary);
+        margin: 15px 0;
+        transition: all 0.3s;
+    }
+    .period-card:hover {
+        box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2);
+        transform: translateY(-2px);
+    }
+    .status-active {
+        background: #dcfce7;
+        color: #166534;
+        padding: 4px 12px;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+    .status-inactive {
+        background: #f3f4f6;
+        color: #6b7280;
+        padding: 4px 12px;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+    .stat-box {
+        display: flex;
+        gap: 15px;
+        margin: 10px 0;
+    }
+    .stat-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px 15px;
+        background: #f0f4f8;
+        border-radius: 6px;
+        min-width: 100px;
+    }
+    .stat-item .label {
+        font-size: 0.75rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+    .stat-item .value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary);
+        margin-top: 5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Gemeinderatsperioden</h1>
+    <a href="/admin/perioden/create" class="btn btn-primary">Neue Periode</a>
+</div>
+
+<div class="btn-group mb-4" role="group">
+    <a href="/admin/perioden?filter=all" class="btn btn-sm {% if filter_param == 'all' %}btn-primary active{% else %}btn-outline-primary{% endif %}">Alle</a>
+    <a href="/admin/perioden?filter=active" class="btn btn-sm {% if filter_param == 'active' %}btn-primary active{% else %}btn-outline-primary{% endif %}">Aktiv</a>
+    <a href="/admin/perioden?filter=inactive" class="btn btn-sm {% if filter_param == 'inactive' %}btn-primary active{% else %}btn-outline-primary{% endif %}">Inaktiv</a>
+</div>
+
+{% if perioden %}
+    {% for periode in perioden %}
+    <div class="period-card card">
+        <div class="card-body">
+            <div class="row align-items-start">
+                <div class="col-md-6">
+                    <h4 class="card-title">{{ periode.name }}</h4>
+                    <p class="card-text text-muted">{{ periode.start_jahr }}–{{ periode.end_jahr }}</p>
+                    <span class="{% if periode.aktiv %}status-active{% else %}status-inactive{% endif %}">
+                        {% if periode.aktiv %}Aktiv{% else %}Inaktiv{% endif %}
+                    </span>
+                </div>
+                <div class="col-md-6">
+                    <div class="stat-box justify-content-end">
+                        <div class="stat-item">
+                            <span class="label">Personen</span>
+                            <span class="value">{{ periode_persons_count.get(periode.id, 0) }}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="label">Ausschüsse</span>
+                            <span class="value">{{ periode_committees_count.get(periode.id, 0) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <a href="/admin/perioden/{{ periode.id }}" class="btn btn-info btn-sm">Detail</a>
+                <a href="/admin/perioden/{{ periode.id }}/edit" class="btn btn-warning btn-sm">Edit</a>
+                <a href="/admin/perioden/{{ periode.id }}/delete" class="btn btn-danger btn-sm" onclick="return confirm('Diese Periode löschen?')">Delete</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="alert alert-info">
+        <p>Keine Perioden vorhanden. <a href="/admin/perioden/create">Erstellen Sie eine neue Periode</a>.</p>
+    </div>
+{% endif %}
+{% endblock %}
