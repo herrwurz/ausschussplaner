@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Sitzungstermine - AusschussPlaner{% endblock %}
+
+{% block extra_css %}
+<style>
+    .month-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .month-nav h3 { margin: 0; color: #1e3a8a; font-weight: bold; }
+    .month-nav button { padding: 8px 16px; margin: 0 5px; }
+    .sitzungen-table { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .sitzungen-table th {
+        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+        color: white;
+        font-weight: 600;
+    }
+    .sitzungen-table td { padding: 14px; }
+    .sitzungen-table tr:hover { background: #f8fafc; }
+    .badge-beschlussfaehig { background: #10b981; color: white; }
+    .badge-nicht-beschlussfaehig { background: #f59e0b; color: white; }
+    .no-data { padding: 20px; text-align: center; color: #666; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mb-4">Alle Sitzungstermine</h1>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="month-nav">
+                <h3>{{ current_month }}</h3>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm" onclick="previousMonth()">← Vorheriger Monat</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="currentMonth()">Heute</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="nextMonth()">Nächster Monat →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if sitzungen %}
+    <div class="table-responsive">
+        <table class="table table-hover sitzungen-table">
+            <thead>
+                <tr>
+                    <th>Datum</th>
+                    <th>Wochentag</th>
+                    <th>Ausschuss</th>
+                    <th>Typ</th>
+                    <th>Uhrzeit</th>
+                    <th>Ort</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sitzungen %}
+                <tr>
+                    <td><strong>{{ s.datum }}</strong></td>
+                    <td>{{ s.wochentag }}</td>
+                    <td>{{ s.ausschuss_name }}</td>
+                    <td><span class="badge bg-info">{{ s.typ }}</span></td>
+                    <td>{{ s.uhrzeit }}</td>
+                    <td>{{ s.ort }}</td>
+                    <td>
+                        {% if s.beschlussfaehig %}
+                            <span class="badge badge-beschlussfaehig">Beschlussfähig</span>
+                        {% else %}
+                            <span class="badge badge-nicht-beschlussfaehig">Nicht beschlussfähig</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/admin/ausschuesse/{{ s.ausschuss_id }}" class="btn btn-sm btn-outline-primary">
+                            Details
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <strong>Keine Sitzungstermine</strong> im ausgewählten Zeitraum vorhanden.
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    function previousMonth() {
+        const url = new URL(window.location);
+        const month = parseInt(url.searchParams.get('month') || new Date().getMonth() + 1);
+        const year = parseInt(url.searchParams.get('year') || new Date().getFullYear());
+
+        let newMonth = month - 1;
+        let newYear = year;
+        if (newMonth < 1) {
+            newMonth = 12;
+            newYear--;
+        }
+
+        url.searchParams.set('month', newMonth);
+        url.searchParams.set('year', newYear);
+        window.location = url.toString();
+    }
+
+    function nextMonth() {
+        const url = new URL(window.location);
+        const month = parseInt(url.searchParams.get('month') || new Date().getMonth() + 1);
+        const year = parseInt(url.searchParams.get('year') || new Date().getFullYear());
+
+        let newMonth = month + 1;
+        let newYear = year;
+        if (newMonth > 12) {
+            newMonth = 1;
+            newYear++;
+        }
+
+        url.searchParams.set('month', newMonth);
+        url.searchParams.set('year', newYear);
+        window.location = url.toString();
+    }
+
+    function currentMonth() {
+        const now = new Date();
+        const url = new URL(window.location);
+        url.searchParams.set('month', now.getMonth() + 1);
+        url.searchParams.set('year', now.getFullYear());
+        window.location = url.toString();
+    }
+</script>
+{% endblock %}
