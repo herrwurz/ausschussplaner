@@ -9,7 +9,9 @@ def test_health(client):
 
 
 def test_create_and_list_person(client):
-    r = client.post("/api/persons", json={"vorname": "Max", "nachname": "Muster"})
+    import uuid
+    email = f"max{uuid.uuid4().hex[:8]}@test.de"
+    r = client.post("/api/persons", json={"vorname": "Max", "nachname": "Muster", "email": email})
     assert r.status_code == 201
     pid = r.json()["id"]
     assert r.json()["name"] == "Max Muster"
