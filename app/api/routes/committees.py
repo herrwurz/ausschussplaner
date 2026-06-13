@@ -34,20 +34,25 @@ def _to_out(a: Ausschuss) -> AusschussOut:
 
 
 @router.get("", response_model=list[AusschussOut])
-def list_committees(db: Session = Depends(get_db)):
+def list_committees(periode_id: int | None = None, db: Session = Depends(get_db)):
+    """Liste Ausschüsse. Optional nach periode_id filtern."""
     stmt = select(Ausschuss).options(
         selectinload(Ausschuss.mitgliedschaften).selectinload(Mitgliedschaft.person)
-    ).order_by(Ausschuss.name)
+    )
+    if periode_id:
+        stmt = stmt.where(Ausschuss.periode_id == periode_id)
+    stmt = stmt.order_by(Ausschuss.name)
     return [_to_out(a) for a in db.scalars(stmt).unique().all()]
 
 
 @router.post("", response_model=AusschussOut, status_code=status.HTTP_201_CREATED)
-def create_committee(payload: AusschussCreate, db: Session = Depends(get_db)):
+def create_committee(payload: AusschussCreate, periode_id: int | None = None, db: Session = Depends(get_db)):
     a = Ausschuss(
         name=payload.name,
         typ=payload.typ,
         turnus=payload.turnus,
         aktiv=payload.aktiv,
+        periode_id=periode_id,
         quorum_override=payload.quorum_override,
     )
     db.add(a)
@@ -85,6 +90,34 @@ def update_committee(committee_id: int, payload: AusschussUpdate, db: Session = 
     db.commit()
     db.refresh(a)
     return _to_out(a)
+
+
+@router.post("/{committee_id}/copy-to-period", response_model=AusschussOut, status_code=status.HTTP_201_CREATED)
+def copy_committee_to_period(committee_id: int, target_periode_id: int, db: Session = Depends(get_db)):
+    """Kopiere Ausschuss zu neuer Periode (ohne Mitgliedschaften)."""
+    source = db.get(Ausschuss, committee_id)
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Quell-Ausschuss nicht gefunden")
+
+    # Überprüfe, ob Periode existiert
+    from app.models.models import Jahresplan
+    periode = db.get(Jahresplan, target_periode_id)
+    if periode is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ziel-Periode nicht gefunden")
+
+    # Erstelle neuen Ausschuss OHNE Mitgliedschaften
+    new_committee = Ausschuss(
+        name=source.name,
+        typ=source.typ,
+        turnus=str(periode.jahr),  # turnus = Jahr der Periode
+        aktiv=True,
+        periode_id=target_periode_id,
+        quorum_override=source.quorum_override,
+    )
+    db.add(new_committee)
+    db.commit()
+    db.refresh(new_committee)
+    return _to_out(new_committee)
 
 
 @router.delete("/{committee_id}", status_code=status.HTTP_204_NO_CONTENT)
