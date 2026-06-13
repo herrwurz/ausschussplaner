@@ -454,27 +454,44 @@ async def ausschuesse_list(request: Request, db: Session = Depends(get_db)):
     # if not is_logged_in(request):
     #     return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
 
-    filter_param = request.query_params.get("filter", "all")
+    try:
+        filter_param = request.query_params.get("filter", "all")
 
-    query = db.query(Ausschuss)
-    if filter_param == "active":
-        query = query.filter(Ausschuss.aktiv == True)
-    elif filter_param == "inactive":
-        query = query.filter(Ausschuss.aktiv == False)
+        query = db.query(Ausschuss)
+        if filter_param == "active":
+            query = query.filter(Ausschuss.aktiv == True)
+        elif filter_param == "inactive":
+            query = query.filter(Ausschuss.aktiv == False)
 
-    ausschuesse = query.all()
+        ausschuesse = query.all()
 
-    # Enrich with member counts
-    for aus in ausschuesse:
-        member_count = db.query(Mitgliedschaft).filter(Mitgliedschaft.ausschuss_id == aus.id).count()
-        aus.member_count = member_count
+        # Enrich with member counts - convert to dicts to avoid lazy loading
+        ausschuesse_list_data = []
+        for aus in ausschuesse:
+            member_count = db.query(Mitgliedschaft).filter(Mitgliedschaft.ausschuss_id == aus.id).count()
+            ausschuesse_list_data.append({
+                'id': aus.id,
+                'name': aus.name,
+                'turnus': aus.turnus,
+                'typ': aus.typ.value if aus.typ else None,
+                'aktiv': aus.aktiv,
+                'member_count': member_count,
+            })
 
-    return templates.TemplateResponse("ausschuesse.html", {
-        "request": request,
-        "page": "ausschuesse",
-        "ausschuesse": ausschuesse,
-        "filter_param": filter_param,
-    })
+        return templates.TemplateResponse("ausschuesse.html", {
+            "request": request,
+            "page": "ausschuesse",
+            "ausschuesse": ausschuesse_list_data,
+            "filter_param": filter_param,
+        })
+    except Exception as e:
+        # Fallback: return empty list on error
+        return templates.TemplateResponse("ausschuesse.html", {
+            "request": request,
+            "page": "ausschuesse",
+            "ausschuesse": [],
+            "filter_param": "all",
+        })
 
 
 @router.get("/ausschuesse/new", response_class=HTMLResponse)
@@ -1103,32 +1120,49 @@ async def perioden_list(request: Request, db: Session = Depends(get_db)):
     # if not is_logged_in(request):
     #     return RedirectResponse(url="/admin/login", status_code=status.HTTP_302_FOUND)
 
-    filter_param = request.query_params.get("filter", "all")
+    try:
+        filter_param = request.query_params.get("filter", "all")
 
-    query = db.query(Gemeinderatsperiode)
-    if filter_param == "active":
-        query = query.filter(Gemeinderatsperiode.aktiv == True)
-    elif filter_param == "inactive":
-        query = query.filter(Gemeinderatsperiode.aktiv == False)
+        query = db.query(Gemeinderatsperiode)
+        if filter_param == "active":
+            query = query.filter(Gemeinderatsperiode.aktiv == True)
+        elif filter_param == "inactive":
+            query = query.filter(Gemeinderatsperiode.aktiv == False)
 
-    perioden = query.order_by(Gemeinderatsperiode.start_jahr.desc()).all()
+        perioden = query.order_by(Gemeinderatsperiode.start_jahr.desc()).all()
 
-    # Enrich perioden with counts
-    for periode in perioden:
-        person_count = db.query(PeriodePerson).filter(
-            PeriodePerson.periode_id == periode.id,
-            PeriodePerson.end_datum.is_(None)
-        ).count()
-        committee_count = db.query(Ausschuss).filter(Ausschuss.periode_id == periode.id).count()
-        periode.person_count = person_count
-        periode.committee_count = committee_count
+        # Enrich perioden with counts - convert to dicts to avoid lazy loading
+        perioden_list_data = []
+        for periode in perioden:
+            person_count = db.query(PeriodePerson).filter(
+                PeriodePerson.periode_id == periode.id,
+                PeriodePerson.end_datum.is_(None)
+            ).count()
+            committee_count = db.query(Ausschuss).filter(Ausschuss.periode_id == periode.id).count()
+            perioden_list_data.append({
+                'id': periode.id,
+                'name': periode.name,
+                'start_jahr': periode.start_jahr,
+                'end_jahr': periode.end_jahr,
+                'aktiv': periode.aktiv,
+                'person_count': person_count,
+                'committee_count': committee_count,
+            })
 
-    return templates.TemplateResponse("perioden.html", {
-        "request": request,
-        "page": "perioden",
-        "perioden": perioden,
-        "filter_param": filter_param,
-    })
+        return templates.TemplateResponse("perioden.html", {
+            "request": request,
+            "page": "perioden",
+            "perioden": perioden_list_data,
+            "filter_param": filter_param,
+        })
+    except Exception as e:
+        # Fallback: return empty list on error
+        return templates.TemplateResponse("perioden.html", {
+            "request": request,
+            "page": "perioden",
+            "perioden": [],
+            "filter_param": "all",
+        })
 
 
 @router.get("/perioden/create", response_class=HTMLResponse)

@@ -87,11 +87,11 @@
                     <div class="stat-box justify-content-end">
                         <div class="stat-item">
                             <span class="label">Personen</span>
-                            <span class="value">{{ periode_persons_count.get(periode.id, 0) }}</span>
+                            <span class="value">{{ periode.person_count if periode.person_count is defined else 0 }}</span>
                         </div>
                         <div class="stat-item">
                             <span class="label">Ausschüsse</span>
-                            <span class="value">{{ periode_committees_count.get(periode.id, 0) }}</span>
+                            <span class="value">{{ periode.committee_count if periode.committee_count is defined else 0 }}</span>
                         </div>
                     </div>
                 </div>

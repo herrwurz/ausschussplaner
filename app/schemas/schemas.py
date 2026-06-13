@@ -29,6 +29,11 @@ class JahresplanCreate(BaseModel):
     bezeichnung: str = ""
 
 
+class JahresplanUpdate(BaseModel):
+    jahr: int | None = None
+    bezeichnung: str | None = None
+
+
 class JahresplanCopyResult(BaseModel):
     jahresplan_id: int
     ziel_jahr: int

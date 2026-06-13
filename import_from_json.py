@@ -9,19 +9,19 @@ from app.models.enums import Rolle, AusschussTyp
 
 # Mapping: Ausschussname -> AusschussTyp
 AUSSCHUSS_MAPPING = {
-    "Infrastruktur": AusschussTyp.AUSSCHUSS,
-    "Bildung": AusschussTyp.AUSSCHUSS,
-    "Sport": AusschussTyp.AUSSCHUSS,
-    "Klima": AusschussTyp.AUSSCHUSS,
-    "Kontrolle": AusschussTyp.AUSSCHUSS,
-    "Kultur": AusschussTyp.AUSSCHUSS,
-    "Hochwasserschutz": AusschussTyp.AUSSCHUSS,
-    "Mittelschule": AusschussTyp.AUSSCHUSS,
-    "Poly": AusschussTyp.AUSSCHUSS,
-    "Soziales": AusschussTyp.AUSSCHUSS,
-    "Stadtentwicklung": AusschussTyp.AUSSCHUSS,
-    "Tiefbau": AusschussTyp.AUSSCHUSS,
-    "Zivilschutz": AusschussTyp.AUSSCHUSS,
+    "Infrastruktur": AusschussTyp.STANDARD,
+    "Bildung": AusschussTyp.STANDARD,
+    "Sport": AusschussTyp.STANDARD,
+    "Klima": AusschussTyp.STANDARD,
+    "Kontrolle": AusschussTyp.KONTROLL,
+    "Kultur": AusschussTyp.STANDARD,
+    "Hochwasserschutz": AusschussTyp.STANDARD,
+    "Mittelschule": AusschussTyp.STANDARD,
+    "Poly": AusschussTyp.POLY,
+    "Soziales": AusschussTyp.STANDARD,
+    "Stadtentwicklung": AusschussTyp.STANDARD,
+    "Tiefbau": AusschussTyp.STANDARD,
+    "Zivilschutz": AusschussTyp.STANDARD,
 }
 
 # Wochentag Mapping (Enum-Werte)

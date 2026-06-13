@@ -62,8 +62,8 @@
                     <h4 class="card-title">{{ ausschuss.name }}</h4>
                     <p class="card-text text-muted">
                         Turnus: <strong>{{ ausschuss.turnus }}</strong>
-                        {% if ausschuss.atyp %}
-                            • Typ: <strong>{{ ausschuss.atyp }}</strong>
+                        {% if ausschuss.typ %}
+                            • Typ: <strong>{{ ausschuss.typ }}</strong>
                         {% endif %}
                     </p>
                     <span class="{% if ausschuss.aktiv %}status-active{% else %}status-inactive{% endif %}">
