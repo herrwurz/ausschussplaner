@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Periode {{ periode.name }} - AusschussPlaner{% endblock %}
+
+{% block extra_css %}
+<style>
+    .section-header {
+        background: linear-gradient(90deg, var(--primary) 0%, var(--primary) 100%);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 6px 6px 0 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 20px;
+        margin-bottom: 0;
+    }
+    .section-header h5 {
+        margin: 0;
+        font-weight: 600;
+    }
+    .section-content {
+        background: white;
+        border: 1px solid #e0e7ff;
+        border-top: none;
+        padding: 20px;
+        border-radius: 0 0 6px 6px;
+        margin-bottom: 20px;
+    }
+    .member-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .member-table thead {
+        background: #f8fafc;
+        border-bottom: 2px solid #e0e7ff;
+    }
+    .member-table th {
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        color: #334155;
+        font-size: 0.875rem;
+    }
+    .member-table td {
+        padding: 12px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .member-table tbody tr:hover {
+        background: #f8fafc;
+    }
+    .form-group-inline {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+    }
+    .form-group-inline select {
+        flex: 1;
+    }
+    .quorum-info {
+        background: #eff6ff;
+        border-left: 4px solid var(--primary);
+        padding: 12px;
+        border-radius: 4px;
+        margin: 15px 0;
+        font-size: 0.875rem;
+        color: #1e40af;
+    }
+    .add-form {
+        background: #f8fafc;
+        padding: 15px;
+        border-radius: 6px;
+        margin-top: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h1>{{ periode.name }} ({{ periode.start_jahr }}–{{ periode.end_jahr }})</h1>
+    <p class="text-muted">Periode Management – Personen und Ausschüsse verwalten</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <!-- Personen Section -->
+        <div class="section-header">
+            <h5>Personen ({{ personen_count }})</h5>
+        </div>
+        <div class="section-content">
+            {% if personen %}
+            <table class="member-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Start</th>
+                        <th style="width: 100px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for person in personen %}
+                    <tr>
+                        <td>{{ person.vorname }} {{ person.nachname }}</td>
+                        <td>{{ person.start_datum }}</td>
+                        <td>
+                            <a href="/admin/perioden/{{ periode.id }}/person/{{ person.person_id }}/remove"
+                               class="btn btn-sm btn-danger"
+                               onclick="return confirm('Person aus Periode entfernen und neuen Jahresplan erstellen?')">
+                                Remove
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted text-center py-3">Keine Personen in dieser Periode</p>
+            {% endif %}
+
+            <div class="add-form">
+                <h6>Person hinzufügen</h6>
+                <form method="post" action="/admin/perioden/{{ periode.id }}/person-add">
+                    <div class="form-group-inline">
+                        <select name="person_id" class="form-select" required>
+                            <option value="">-- Wählen Sie eine Person --</option>
+                            {% for person in available_persons %}
+                            <option value="{{ person.id }}">{{ person.vorname }} {{ person.nachname }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary">Hinzufügen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <!-- Ausschüsse Section -->
+        <div class="section-header">
+            <h5>Ausschüsse ({{ ausschuesse_count }})</h5>
+            <a href="/admin/perioden/{{ periode.id }}/ausschuss-add" class="btn btn-sm btn-light">+ Neuer</a>
+        </div>
+        <div class="section-content">
+            {% if ausschuesse %}
+            <table class="member-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Typ</th>
+                        <th style="width: 60px;">Member</th>
+                        <th style="width: 90px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ausschuss in ausschuesse %}
+                    <tr>
+                        <td>
+                            <strong>{{ ausschuss.name }}</strong>
+                            {% if ausschuss.turnus %}
+                            <br><small class="text-muted">{{ ausschuss.turnus }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">{{ ausschuss.typ }}</span>
+                        </td>
+                        <td class="text-center">{{ ausschuss_member_counts.get(ausschuss.id, 0) }}</td>
+                        <td>
+                            <a href="/admin/ausschuesse/{{ ausschuss.id }}/mitgliedschaften" class="btn btn-sm btn-info">Members</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="quorum-info">
+                <strong>Quorum-Berechnung:</strong> 50% der Mitglieder + Obmann erforderlich
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-3">Keine Ausschüsse in dieser Periode</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <a href="/admin/perioden" class="btn btn-secondary">Zurück zu Perioden</a>
+    <a href="/admin/perioden/{{ periode.id }}/edit" class="btn btn-warning">Periode bearbeiten</a>
+</div>
+{% endblock %}

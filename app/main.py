@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, admin, person
+from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, person, perioden
 from app.core.config import get_settings
 from app.db.base import Base, engine, SessionLocal
 from app.db.seed import seed_data
@@ -56,8 +56,9 @@ app.include_router(absences.router, prefix="/api")
 app.include_router(rules.router, prefix="/api")
 app.include_router(calculation.router, prefix="/api")
 app.include_router(jahresplan.router, prefix="/api")
+app.include_router(perioden.router, prefix="/api")
 app.include_router(person.router, prefix="/api")
-app.include_router(admin.router)
+# app.include_router(admin.router)  # Replaced with React-based admin frontend
 
 
 @app.get("/health", tags=["System"])

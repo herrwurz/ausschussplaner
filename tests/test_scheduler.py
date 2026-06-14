@@ -15,10 +15,11 @@ from app.services.scheduler import (
 
 
 def test_required_hours_masterprompt_examples():
-    assert required_hours(7 * 60, 90) == [7, 8]
-    assert required_hours(16 * 60, 90) == [16, 17]
-    assert required_hours(17 * 60, 90) == [17, 18]
-    assert required_hours(18 * 60 + 30, 90) == [18, 19]
+    # Neue Logik: Nur Startstunde zählt, nicht alle Stunden während der Sitzung
+    assert required_hours(7 * 60, 90) == [7]
+    assert required_hours(16 * 60, 90) == [16]
+    assert required_hours(17 * 60, 90) == [17]
+    assert required_hours(18 * 60 + 30, 90) == [18]
 
 
 def test_person_partial_availability_not_present():

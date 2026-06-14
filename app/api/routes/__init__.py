@@ -1,4 +1,3 @@
 """API-Routen."""
-from . import admin
-
-__all__ = ["admin"]
+# Admin routes replaced with React-based frontend
+__all__ = []

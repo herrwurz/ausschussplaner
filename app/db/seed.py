@@ -15,13 +15,17 @@ Ausführung:  python -m app.db.seed
 """
 from __future__ import annotations
 
+from datetime import date
 from app.core.security import hash_password
 from app.db.base import Base, SessionLocal, engine
 from app.models.enums import AusschussTyp, Rolle, Wochentag
 from app.models.models import (
     Ausschuss,
+    Gemeinderatsperiode,
+    Jahresplan,
     Mitgliedschaft,
     Person,
+    PeriodePerson,
     Sitzungsregel,
     Verfuegbarkeit,
 )
@@ -131,7 +135,7 @@ COMMITTEES_DATA = [
         ("p07", OB), ("p14", ST), ("p20", MI), ("p21", MI),
         ("p23", MI), ("p25", MI), ("p27", MI), ("p31", MI)]),
     # 5. Kontrolle — Hochrathner (p31) Obmann, Schnetzinger (p24) Stv.
-    ("Kontrolle", AusschussTyp.KONTROLL, [
+    ("Kontrolle", AusschussTyp.STANDARD, [
         ("p31", OB), ("p24", ST), ("p12", MI), ("p17", MI),
         ("p18", MI), ("p22", MI), ("p28", MI)]),
     # 6. Kultur — Seiler (p03) Obmann, Lindner (p16) Stv.
@@ -147,7 +151,7 @@ COMMITTEES_DATA = [
         ("p12", OB), ("p18", ST), ("p04", MI), ("p05", MI),
         ("p09", MI), ("p16", MI), ("p28", MI), ("p29", MI)]),
     # 9. Poly — nur 4 Mitglieder; Nöbauer (p18) Obmann, Prohaska (p05) Stv.
-    ("Poly", AusschussTyp.POLY, [
+    ("Poly", AusschussTyp.STANDARD, [
         ("p18", OB), ("p05", ST), ("p09", MI), ("p12", MI)]),
     # 10. Soziales — Killinger-Spitz (p08) Obmann, Ströcker (p06) Stv.
     ("Soziales", AusschussTyp.STANDARD, [
@@ -298,9 +302,75 @@ def seed_data(db=None) -> None:
         print(f"✅ Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
               f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschüsse")
         print(f"💡 Test Person Portal: test@example.com / test123")
+
+        # Erstelle Gemeinderatsperiode P1 2025-2029
+        seed_periode_data(db)
     finally:
         if should_close:
             db.close()
+
+
+def seed_periode_data(db) -> None:
+    """Erstelle Gemeinderatsperiode P1 2025-2029 und verknüpfe Personen/Ausschüsse."""
+
+    # Überprüfe ob Periode schon existiert
+    if db.query(Gemeinderatsperiode).filter(Gemeinderatsperiode.name == "P1").first():
+        return
+
+    # Erstelle Periode P1 2025-2029
+    periode = Gemeinderatsperiode(
+        name="P1",
+        start_jahr=2025,
+        end_jahr=2029,
+        aktiv=True
+    )
+    db.add(periode)
+    db.flush()
+
+    # Verknüpfe ALLE aktiven Personen mit der Periode (Start: 1.1.2025)
+    persons = db.query(Person).filter(Person.aktiv == True).all()
+    for person in persons:
+        db.add(PeriodePerson(
+            periode_id=periode.id,
+            person_id=person.id,
+            start_datum=date(2025, 1, 1),
+            end_datum=None,  # Noch aktiv
+            grund_austritt=""
+        ))
+
+    # Verknüpfe ALLE Ausschüsse mit der Periode
+    ausschuesse = db.query(Ausschuss).filter(Ausschuss.periode_id.is_(None)).all()
+    for ausschuss in ausschuesse:
+        ausschuss.periode_id = periode.id
+
+    # Aktualisiere Mitgliedschaften: periode_id setzen
+    mitgliedschaften = db.query(Mitgliedschaft).filter(Mitgliedschaft.periode_id.is_(None)).all()
+    for mitgliedschaft in mitgliedschaften:
+        mitgliedschaft.periode_id = periode.id
+
+    # Erstelle Jahrespläne für 2025-2029
+    for jahr in range(2025, 2030):
+        # Überprüfe ob Jahresplan schon existiert
+        if db.query(Jahresplan).filter(
+            Jahresplan.periode_id == periode.id,
+            Jahresplan.jahr == jahr
+        ).first():
+            continue
+
+        db.add(Jahresplan(
+            periode_id=periode.id,
+            jahr=jahr,
+            bezeichnung=f"Jahresplan {jahr}",
+            variante=1,
+            grund_variante="",
+            aktiv=True
+        ))
+
+    db.commit()
+    print(f"✅ Gemeinderatsperiode erstellt: P1 {periode.start_jahr}-{periode.end_jahr}")
+    print(f"✅ {len(persons)} Personen zugeordnet")
+    print(f"✅ {len(ausschuesse)} Ausschüsse zugeordnet")
+    print(f"✅ 5 Jahrespläne erstellt (2025-2029)")
 
 
 if __name__ == "__main__":

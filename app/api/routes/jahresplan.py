@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
+from app.models.models import Jahresplan
 from app.schemas.schemas import (
     JahresplanCopy,
     JahresplanCopyResult,
     JahresplanCreate,
+    JahresplanUpdate,
     JahresplanOut,
 )
 from app.services.jahresplan_service import (
@@ -39,3 +41,37 @@ def copy_plan(payload: JahresplanCopy, db: Session = Depends(get_db)):
         return copy_jahresplan(db, payload)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.get("/{plan_id}", response_model=JahresplanOut)
+def get_plan(plan_id: int, db: Session = Depends(get_db)):
+    """Hole einen Jahresplan."""
+    plan = db.get(Jahresplan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Jahresplan nicht gefunden")
+    return plan
+
+
+@router.patch("/{plan_id}", response_model=JahresplanOut)
+def update_plan(plan_id: int, payload: JahresplanUpdate, db: Session = Depends(get_db)):
+    """Aktualisiere einen Jahresplan."""
+    plan = db.get(Jahresplan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Jahresplan nicht gefunden")
+    if payload.jahr is not None:
+        plan.jahr = payload.jahr
+    if payload.bezeichnung is not None:
+        plan.bezeichnung = payload.bezeichnung
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_plan(plan_id: int, db: Session = Depends(get_db)):
+    """Lösche einen Jahresplan."""
+    plan = db.get(Jahresplan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Jahresplan nicht gefunden")
+    db.delete(plan)
+    db.commit()
