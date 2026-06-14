@@ -15,6 +15,16 @@ from app.models.enums import (
 )
 
 
+# ─────────────────────────── Periode ───────────────────────────
+class PeriodeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    start_jahr: int
+    end_jahr: int
+    aktiv: bool
+
+
 # ─────────────────────────── Jahresplan ───────────────────────────
 class JahresplanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -114,6 +124,7 @@ class AusschussUpdate(BaseModel):
     typ: AusschussTyp | None = None
     turnus: str | None = None
     aktiv: bool | None = None
+    periode_id: int | None = None
     quorum_override: int | None = None
     mitglieder: list[MitgliedItem] | None = None
 
@@ -176,6 +187,7 @@ class BerechnungRequest(BaseModel):
     planungswochen: int = 2
     freitag_modus: str = "reserve"  # reserve | normal | nein
     max_alternativen: int = 5
+    min_verfuegbarkeit: int = 100  # 0-100, nur Termine mit mind. dieser Quote
     start_datum: date | None = None  # Montag der ersten Planungswoche; aktiviert Abwesenheits-Check
 
 

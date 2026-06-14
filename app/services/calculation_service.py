@@ -141,20 +141,24 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
             friday_mode=req.freitag_modus,
             max_alternatives=req.max_alternativen,
             quorum_defaults=quorum_defaults,
+            max_end_min=20 * 60 + 31,
             start_date=start_date,
         )
 
-        tops = [s for s in result.all_slots if s.status == TerminStatus.TOP]
-        besch = [s for s in result.all_slots if s.status == TerminStatus.BESCHLUSSFAEHIG]
+        # Filtere nach minimaler Verfügbarkeit
+        min_quote = req.min_verfuegbarkeit
+        tops = [s for s in result.all_slots if s.status == TerminStatus.TOP and s.quote >= min_quote]
+        besch = [s for s in result.all_slots if s.status == TerminStatus.BESCHLUSSFAEHIG and s.quote >= min_quote]
         alt = [
             s for s in result.all_slots
-            if s.status in (TerminStatus.ALTERNATIV, TerminStatus.OBMANN_DA)
+            if s.status in (TerminStatus.ALTERNATIV, TerminStatus.OBMANN_DA) and s.quote >= min_quote
         ]
 
-        top_total += sum(1 for s in result.best_per_day if s.status == TerminStatus.TOP)
-        besch_total += sum(1 for s in result.best_per_day if s.status == TerminStatus.BESCHLUSSFAEHIG)
+        max_alt = req.max_alternativen
+        top_total += sum(1 for s in result.best_per_day if s.status == TerminStatus.TOP and s.quote >= min_quote)
+        besch_total += sum(1 for s in result.best_per_day if s.status == TerminStatus.BESCHLUSSFAEHIG and s.quote >= min_quote)
         krit_total += sum(
-            1 for s in result.best_per_day if s.status == TerminStatus.NICHT_BESCHLUSSFAEHIG
+            1 for s in result.best_per_day if s.status == TerminStatus.NICHT_BESCHLUSSFAEHIG and s.quote >= min_quote
         )
 
         analysen.append(
@@ -166,10 +170,10 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
                     MitgliedOut(person_id=m.person_id, rolle=m.rolle, name=m.name)
                     for m in result.members
                 ],
-                top_termine=[_slot_to_out(s) for s in tops[:10]],
-                beschlussfaehig=[_slot_to_out(s) for s in besch[:10]],
-                alternativen=[_slot_to_out(s) for s in alt[:10]],
-                beste_je_tag=[_slot_to_out(s) for s in result.best_per_day],
+                top_termine=[_slot_to_out(s) for s in tops[:max_alt]],
+                beschlussfaehig=[_slot_to_out(s) for s in besch[:max_alt]],
+                alternativen=[_slot_to_out(s) for s in alt[:max_alt]],
+                beste_je_tag=[_slot_to_out(s) for s in result.best_per_day if s.quote >= min_quote],
                 risiko=sched.risk_analysis(result),
                 empfehlung_text=sched.recommendation_text(result),
             )

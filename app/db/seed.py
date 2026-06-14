@@ -135,7 +135,7 @@ COMMITTEES_DATA = [
         ("p07", OB), ("p14", ST), ("p20", MI), ("p21", MI),
         ("p23", MI), ("p25", MI), ("p27", MI), ("p31", MI)]),
     # 5. Kontrolle — Hochrathner (p31) Obmann, Schnetzinger (p24) Stv.
-    ("Kontrolle", AusschussTyp.KONTROLL, [
+    ("Kontrolle", AusschussTyp.STANDARD, [
         ("p31", OB), ("p24", ST), ("p12", MI), ("p17", MI),
         ("p18", MI), ("p22", MI), ("p28", MI)]),
     # 6. Kultur — Seiler (p03) Obmann, Lindner (p16) Stv.
@@ -151,7 +151,7 @@ COMMITTEES_DATA = [
         ("p12", OB), ("p18", ST), ("p04", MI), ("p05", MI),
         ("p09", MI), ("p16", MI), ("p28", MI), ("p29", MI)]),
     # 9. Poly — nur 4 Mitglieder; Nöbauer (p18) Obmann, Prohaska (p05) Stv.
-    ("Poly", AusschussTyp.POLY, [
+    ("Poly", AusschussTyp.STANDARD, [
         ("p18", OB), ("p05", ST), ("p09", MI), ("p12", MI)]),
     # 10. Soziales — Killinger-Spitz (p08) Obmann, Ströcker (p06) Stv.
     ("Soziales", AusschussTyp.STANDARD, [

@@ -115,15 +115,16 @@ def _fmt(minutes: int) -> str:
 
 
 def required_hours(start_min: int, duration_min: int) -> list[int]:
-    """Alle vollen Stunden, die ein Block belegt.
+    """Nur die Startstunde zählt.
 
-    16:00–17:30 (start=960, dur=90) -> [16, 17]
-    18:30–20:00 (start=1110, dur=90) -> [18, 19]
+    Wenn jemand "Stunde 19 verfügbar" ist, kann die Sitzung 19:00–20:30 stattfinden.
+    19:00–19:30 ist Stunde 19, 19:30–20:30 ist auch noch Stunde 19.
+
+    16:00–17:30 (start=960) -> [16]
+    19:00–20:30 (start=1140) -> [19]
     """
-    end_min = start_min + duration_min
-    first = start_min // 60
-    last = (end_min - 1) // 60
-    return list(range(first, last + 1))
+    start_hour = start_min // 60
+    return [start_hour]
 
 
 def is_present(
@@ -173,7 +174,7 @@ def calculate_committee(
     friday_mode: str = "reserve",
     max_alternatives: int = 5,
     quorum_defaults: dict[AusschussTyp, int] | None = None,
-    max_end_min: int = 20 * 60,
+    max_end_min: int = 20 * 60 + 30,
     start_date: date | None = None,
 ) -> CommitteeResult:
     """Berechne alle Terminvorschläge eines Ausschusses."""
