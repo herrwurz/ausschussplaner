@@ -315,3 +315,161 @@ def recommendation_text(result: CommitteeResult) -> str:
         picks = " · ".join(f"W{s.week} {DAY_LABEL[s.day]} {s.start_str}" for s in besch[:2])
         return f"Empfohlen (Flexibel): {picks} — beschlussfähig."
     return "Kritisch: Kein beschlussfähiger Termin gefunden. Verfügbarkeiten prüfen oder Zeitraum erweitern."
+
+
+# ───────────────────── GLOBAL SCHEDULING (Multi-Ausschuss) ──────────────
+@dataclass
+class GlobalScheduleResult:
+    """Ergebnis der globalen Terminplanung für mehrere Ausschüsse."""
+
+    results: list[CommitteeResult]
+    assigned: dict[int, Slot]  # committee_id -> assigned slot
+    conflicts: list[dict] = field(default_factory=list)  # Person conflicts
+    schedule_quality: dict = field(default_factory=dict)  # Metriken
+
+    def to_dict(self) -> dict:
+        """Konvertiere zu JSON-serialisierbarer Form."""
+        return {
+            "results": [
+                {
+                    "committee_id": r.committee.committee_id,
+                    "committee_name": r.committee.name,
+                    "assigned_slot": {
+                        "week": self.assigned.get(r.committee.committee_id, type('S', (), {
+                            'week': None, 'day': None, 'start_min': None, 'end_min': None,
+                            'quote': None, 'status': None, 'present': [], 'missing': []
+                        })()).week,
+                        "day": DAY_LABEL.get(self.assigned[r.committee.committee_id].day) if r.committee.committee_id in self.assigned else None,
+                        "start": self.assigned[r.committee.committee_id].start_str if r.committee.committee_id in self.assigned else None,
+                        "end": self.assigned[r.committee.committee_id].end_str if r.committee.committee_id in self.assigned else None,
+                        "present_count": len(self.assigned[r.committee.committee_id].present) if r.committee.committee_id in self.assigned else 0,
+                        "quote": self.assigned[r.committee.committee_id].quote if r.committee.committee_id in self.assigned else None,
+                        "status": self.assigned[r.committee.committee_id].status.value if r.committee.committee_id in self.assigned else None,
+                    } if r.committee.committee_id in self.assigned else None,
+                }
+                for r in self.results
+            ],
+            "conflicts": self.conflicts,
+            "quality": self.schedule_quality,
+        }
+
+
+def _has_conflict(slot: Slot, assigned_slots: dict[int, Slot], duration_min: int) -> tuple[bool, list[str]]:
+    """Prüfe ob Slot zeitliche Konflikte mit bereits zugewiesenen Slots hat.
+
+    Rückgabe: (hat_konflikt, liste_konfligierender_personen)
+    """
+    conflicts = []
+
+    for other_slot in assigned_slots.values():
+        # Selber Tag und Woche?
+        if slot.week != other_slot.week or slot.day != other_slot.day:
+            continue
+
+        # Zeitliche Überlappung?
+        slot_end = slot.start_min + duration_min
+        other_end = other_slot.start_min + duration_min
+
+        if slot.start_min < other_end and slot_end > other_slot.start_min:
+            # Überlappung erkannt - prüfe gemeinsame Personen
+            slot_ids = {m.person_id for m in slot.present}
+            other_ids = {m.person_id for m in other_slot.present}
+            common = slot_ids & other_ids
+
+            if common:
+                for person_id in common:
+                    person_name = next(
+                        (m.name for m in slot.present if m.person_id == person_id),
+                        f"Person {person_id}"
+                    )
+                    conflicts.append(
+                        f"{person_name} kann nicht gleichzeitig in {slot.committee_name} "
+                        f"(W{slot.week} {DAY_LABEL[slot.day]} {slot.start_str}) und "
+                        f"{other_slot.committee_name} sein."
+                    )
+
+    return len(conflicts) > 0, conflicts
+
+
+def schedule_multiple_committees(
+    committees: list[CommitteeResult],
+    *,
+    duration_min: int = 90,
+) -> GlobalScheduleResult:
+    """Plane mehrere Ausschüsse mit Konflikt-Vermeidung.
+
+    Greedy-Algorithmus:
+    1. Sortiere Ausschüsse nach Priorität (TOP > BESCHLUSSFÄHIG > ALTERNATIV > ...)
+    2. Für jeden Ausschuss: Finde besten verfügbaren Slot OHNE Konflikte
+    3. Dokumentiere Konflikte, die nicht vermeidbar sind
+    """
+
+    # Sammle alle TOP/BESCHLUSSFÄHIG Slots pro Ausschuss
+    committee_slots: dict[int, list[Slot]] = {}
+    for result in committees:
+        priority_slots = [
+            s for s in result.best_per_day
+            if s.status in (TerminStatus.TOP, TerminStatus.BESCHLUSSFAEHIG)
+        ]
+        if not priority_slots:
+            # Fallback auf beste Slots insgesamt
+            priority_slots = result.best_per_day[:3]
+        committee_slots[result.committee.committee_id] = priority_slots
+
+    # Sortiere Ausschüsse nach Anzahl der verfügbaren TOP-Slots (weniger Optionen = höhere Priorität)
+    sorted_committees = sorted(
+        committees,
+        key=lambda r: (
+            -len([s for s in committee_slots[r.committee.committee_id] if s.status == TerminStatus.TOP]),
+            -len(committee_slots[r.committee.committee_id]),
+        )
+    )
+
+    assigned: dict[int, Slot] = {}
+    conflicts: list[dict] = []
+
+    for result in sorted_committees:
+        committee_id = result.committee.committee_id
+        available_slots = committee_slots[committee_id]
+
+        best_slot = None
+        for slot in available_slots:
+            has_conflict, conflict_list = _has_conflict(slot, assigned, duration_min)
+            if not has_conflict:
+                best_slot = slot
+                break
+
+        if best_slot:
+            assigned[committee_id] = best_slot
+        else:
+            # Kein konfliktfreier Slot gefunden - wähle besten trotzdem und dokumentiere
+            if available_slots:
+                best_slot = available_slots[0]
+                assigned[committee_id] = best_slot
+
+                _, conflict_list = _has_conflict(best_slot, assigned, duration_min)
+                if conflict_list:
+                    conflicts.append({
+                        "committee_id": committee_id,
+                        "committee_name": result.committee.name,
+                        "slot": f"W{best_slot.week} {DAY_LABEL[best_slot.day]} {best_slot.start_str}",
+                        "issues": conflict_list,
+
+                    })
+
+    # Berechne Metriken
+    quality = {
+        "total_committees": len(committees),
+        "assigned": len(assigned),
+        "conflicts": len(conflicts),
+        "avg_quote": round(sum(assigned[cid].quote for cid in assigned) / len(assigned), 1) if assigned else 0,
+        "top_slots": sum(1 for s in assigned.values() if s.status == TerminStatus.TOP),
+        "beschlussfaehig": sum(1 for s in assigned.values() if s.status == TerminStatus.BESCHLUSSFAEHIG),
+    }
+
+    return GlobalScheduleResult(
+        results=committees,
+        assigned=assigned,
+        conflicts=conflicts,
+        schedule_quality=quality,
+    )

@@ -102,7 +102,11 @@ def _slot_to_out(s: sched.Slot) -> TerminVorschlagOut:
 
 
 def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
-    """Hauptfunktion: berechnet Vorschläge für die gewünschten Ausschüsse."""
+    """Hauptfunktion: berechnet Vorschläge mit GLOBALER KONFLIKT-VERMEIDUNG.
+
+    NEU: Nutzt globale Planung um sicherzustellen, dass keine Person
+    gleichzeitig in mehreren Ausschüssen eingeplant wird.
+    """
     regel = _load_regel(db)
     quorum_defaults = {
         AusschussTyp.STANDARD: regel.quorum_standard,
@@ -129,9 +133,8 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
         stmt = stmt.where(Ausschuss.id.in_(req.ausschuss_ids))
     ausschuesse = db.scalars(stmt).unique().all()
 
-    analysen: list[AusschussAnalyse] = []
-    top_total = besch_total = krit_total = 0
-
+    # STEP 1: Berechne Ergebnisse für alle Ausschüsse EINZELN
+    all_results: list[sched.CommitteeResult] = []
     for a in ausschuesse:
         cin = _committee_to_input(a, start_date=start_date, weeks=weeks)
         result = sched.calculate_committee(
@@ -144,9 +147,24 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
             max_end_min=20 * 60 + 31,
             start_date=start_date,
         )
+        all_results.append(result)
+
+    # STEP 2: GLOBALE PLANUNG - Koordiniere Termine um Konflikte zu vermeiden
+    global_schedule = sched.schedule_multiple_committees(
+        all_results,
+        duration_min=regel.block_minuten,
+    )
+
+    # STEP 3: Formatiere Ergebnisse mit globalen Zuweisungen
+    analysen: list[AusschussAnalyse] = []
+    top_total = besch_total = krit_total = 0
+    min_quote = req.min_verfuegbarkeit
+    max_alt = req.max_alternativen
+
+    for result in all_results:
+        assigned_slot = global_schedule.assigned.get(result.committee.committee_id)
 
         # Filtere nach minimaler Verfügbarkeit
-        min_quote = req.min_verfuegbarkeit
         tops = [s for s in result.all_slots if s.status == TerminStatus.TOP and s.quote >= min_quote]
         besch = [s for s in result.all_slots if s.status == TerminStatus.BESCHLUSSFAEHIG and s.quote >= min_quote]
         alt = [
@@ -154,18 +172,25 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
             if s.status in (TerminStatus.ALTERNATIV, TerminStatus.OBMANN_DA) and s.quote >= min_quote
         ]
 
-        max_alt = req.max_alternativen
         top_total += sum(1 for s in result.best_per_day if s.status == TerminStatus.TOP and s.quote >= min_quote)
         besch_total += sum(1 for s in result.best_per_day if s.status == TerminStatus.BESCHLUSSFAEHIG and s.quote >= min_quote)
         krit_total += sum(
             1 for s in result.best_per_day if s.status == TerminStatus.NICHT_BESCHLUSSFAEHIG and s.quote >= min_quote
         )
 
+        # Nutze globalen Slot wenn verfügbar und ohne Konflikte
+        empfehlung_text = sched.recommendation_text(result)
+        if assigned_slot:
+            empfehlung_text = (
+                f"✅ Global koordiniert: W{assigned_slot.week} {sched.DAY_LABEL[assigned_slot.day]} "
+                f"{assigned_slot.start_str}—{assigned_slot.end_str} ({assigned_slot.quote}% anwesend)"
+            )
+
         analysen.append(
             AusschussAnalyse(
-                ausschuss_id=a.id,
-                ausschuss_name=a.name,
-                typ=a.typ,
+                ausschuss_id=result.committee.committee_id,
+                ausschuss_name=result.committee.name,
+                typ=result.committee.typ,
                 mitglieder=[
                     MitgliedOut(person_id=m.person_id, rolle=m.rolle, name=m.name)
                     for m in result.members
@@ -173,11 +198,16 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
                 top_termine=[_slot_to_out(s) for s in tops[:max_alt]],
                 beschlussfaehig=[_slot_to_out(s) for s in besch[:max_alt]],
                 alternativen=[_slot_to_out(s) for s in alt[:max_alt]],
-                beste_je_tag=[_slot_to_out(s) for s in result.best_per_day if s.quote >= min_quote],
+                beste_je_tag=[_slot_to_out(assigned_slot)] if assigned_slot else [_slot_to_out(s) for s in result.best_per_day if s.quote >= min_quote],
                 risiko=sched.risk_analysis(result),
-                empfehlung_text=sched.recommendation_text(result),
+                empfehlung_text=empfehlung_text,
             )
         )
+
+    # Dokumentiere globale Scheduling-Qualität
+    conflicts_info = ""
+    if global_schedule.conflicts:
+        conflicts_info = f" ⚠️ {len(global_schedule.conflicts)} Ausschüsse mit nicht-vermeidbaren Konflikten"
 
     return BerechnungResponse(
         analysen=analysen,
@@ -186,6 +216,11 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
             "top_termine": top_total,
             "beschlussfaehig": besch_total,
             "kritisch": krit_total,
+            "global_scheduling": {
+                "status": "✅ Konflikte minimiert" if not global_schedule.conflicts else "⚠️ Konflikte nicht vermeidbar",
+                "quality": global_schedule.schedule_quality,
+                "conflicts_count": len(global_schedule.conflicts),
+            },
         },
     )
 
