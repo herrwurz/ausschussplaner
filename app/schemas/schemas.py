@@ -183,6 +183,7 @@ class SitzungsregelOut(SitzungsregelBase):
 class BerechnungRequest(BaseModel):
     """Parameter für die Terminberechnung."""
 
+    periode_id: int | None = None
     ausschuss_ids: list[int] | None = None  # None = alle aktiven
     planungswochen: int = 2
     freitag_modus: str = "reserve"  # reserve | normal | nein
@@ -214,19 +215,22 @@ class AusschussAnalyse(BaseModel):
 
     ausschuss_id: int
     ausschuss_name: str
-    typ: AusschussTyp
-    mitglieder: list[MitgliedOut]
-    top_termine: list[TerminVorschlagOut]
-    beschlussfaehig: list[TerminVorschlagOut]
-    alternativen: list[TerminVorschlagOut]
-    beste_je_tag: list[TerminVorschlagOut]
-    risiko: list[dict]
-    empfehlung_text: str
+    ausschuss_typ: AusschussTyp | None = None
+    mitglieder: list[MitgliedOut] = []
+    top_termine: list[TerminVorschlagOut] = []
+    beschlussfaehig: list[TerminVorschlagOut] = []
+    alternativen: list[TerminVorschlagOut] = []
+    beste_je_tag: list[TerminVorschlagOut] = []
+    risiko: list[dict] = []
+    empfehlung_text: str = ""
 
 
 class BerechnungResponse(BaseModel):
     analysen: list[AusschussAnalyse]
-    zusammenfassung: dict
+    start_datum: date | None = None
+    planungswochen: int = 2
+    zusammenfassung: dict | None = None
+    timestamp: str | None = None
 
 
 # ─────────────────────── Jahresplan ───────────────────────────

@@ -21,6 +21,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -33,11 +34,39 @@ from app.db.base import Base
 from app.models.enums import (
     AbwesenheitsArt,
     AusschussTyp,
+    BenutzerRolle,
     Partei,
     Rolle,
     TerminStatus,
     Wochentag,
 )
+
+
+class User(Base):
+    """Authentifizierter Benutzer des Systems."""
+
+    __tablename__ = "user"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    vorname: Mapped[str] = mapped_column(String(100), nullable=False)
+    nachname: Mapped[str] = mapped_column(String(100), nullable=False)
+    rolle: Mapped[BenutzerRolle] = mapped_column(Enum(BenutzerRolle), default=BenutzerRolle.BENUTZER)
+
+    # Falls OBMANN: welche Ausschüsse
+    obmann_ausschuss_ids: Mapped[str] = mapped_column(String(500), default="")  # JSON-encoded list
+
+    aktiv: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_user_email"),
+    )
+
+    def __repr__(self) -> str:
+        return f"User(id={self.id}, email={self.email}, rolle={self.rolle.value})"
 
 
 class Person(Base):
@@ -90,7 +119,7 @@ class Verfuegbarkeit(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("person.id", ondelete="CASCADE"))
     wochentag: Mapped[Wochentag] = mapped_column(Enum(Wochentag))
-    stunde: Mapped[int] = mapped_column(Integer)  # 0–23
+    stunde: Mapped[float] = mapped_column(Float)  # 7, 7.5, 16, 16.5, ..., 19
     verfuegbar: Mapped[bool] = mapped_column(Boolean, default=True)
 
     person: Mapped[Person] = relationship(back_populates="verfuegbarkeiten")
@@ -107,9 +136,6 @@ class Ausschuss(Base):
     typ: Mapped[AusschussTyp] = mapped_column(Enum(AusschussTyp), default=AusschussTyp.STANDARD)
     turnus: Mapped[str] = mapped_column(String(50), default="")
     aktiv: Mapped[bool] = mapped_column(Boolean, default=True)
-
-    # Optional pro Ausschuss überschreibbares Quorum (sonst Default je Typ)
-    quorum_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     periode: Mapped[Gemeinderatsperiode | None] = relationship(back_populates="ausschuesse")
     mitgliedschaften: Mapped[list[Mitgliedschaft]] = relationship(
@@ -165,9 +191,6 @@ class Sitzungsregel(Base):
     sitzung_minuten: Mapped[int] = mapped_column(Integer, default=75)
     pause_minuten: Mapped[int] = mapped_column(Integer, default=15)
     council_minuten: Mapped[int] = mapped_column(Integer, default=240)
-    quorum_standard: Mapped[int] = mapped_column(Integer, default=4)
-    quorum_poly: Mapped[int] = mapped_column(Integer, default=2)
-    quorum_kontroll: Mapped[int] = mapped_column(Integer, default=3)
     planungswochen: Mapped[int] = mapped_column(Integer, default=2)
     freitag_modus: Mapped[str] = mapped_column(String(20), default="reserve")
 

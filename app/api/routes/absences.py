@@ -40,6 +40,29 @@ def create_absence(payload: AbwesenheitCreate, db: Session = Depends(get_db)):
     return out
 
 
+@router.put("/{absence_id}", response_model=AbwesenheitOut, status_code=status.HTTP_200_OK)
+def update_absence(absence_id: int, payload: AbwesenheitCreate, db: Session = Depends(get_db)):
+    ab = db.get(Abwesenheit, absence_id)
+    if ab is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Abwesenheit nicht gefunden")
+    if db.get(Person, payload.person_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Person fehlt")
+    if payload.bis < payload.von:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "bis vor von")
+
+    ab.person_id = payload.person_id
+    ab.von = payload.von
+    ab.bis = payload.bis
+    ab.art = payload.art
+    ab.bemerkung = payload.bemerkung
+
+    db.commit()
+    db.refresh(ab)
+    out = AbwesenheitOut.model_validate(ab)
+    out.person_name = ab.person.name if ab.person else None
+    return out
+
+
 @router.delete("/{absence_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_absence(absence_id: int, db: Session = Depends(get_db)):
     ab = db.get(Abwesenheit, absence_id)

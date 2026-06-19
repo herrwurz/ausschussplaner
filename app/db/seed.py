@@ -16,9 +16,9 @@ Ausführung:  python -m app.db.seed
 from __future__ import annotations
 
 from datetime import date
-from app.core.security import hash_password
+from app.services.auth_service import AuthService, PasswordService
 from app.db.base import Base, SessionLocal, engine
-from app.models.enums import AusschussTyp, Rolle, Wochentag
+from app.models.enums import AusschussTyp, Rolle, Wochentag, BenutzerRolle
 from app.models.models import (
     Ausschuss,
     Gemeinderatsperiode,
@@ -27,12 +27,39 @@ from app.models.models import (
     Person,
     PeriodePerson,
     Sitzungsregel,
+    User,
     Verfuegbarkeit,
 )
 
-SLOTS = [7, 16, 17, 18, 19]
+SLOTS = [7, 16, 16.5, 17, 17.5, 18, 18.5, 19]
 DAYS = [Wochentag.MO, Wochentag.DI, Wochentag.MI, Wochentag.DO, Wochentag.FR]
 J, N = True, False
+
+# Hilfsfunktion: Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
+def expand_matrix(old_matrix):
+    """Konvertiert Person-Matrix mit 5 Slots zu 8 Slots.
+
+    Input: 5 Tage × 5 Slots [[Slot1_Mo, Slot2_Mo, ...], [Slot1_Di, Slot2_Di, ...], ...]
+    Output: 5 Tage × 8 Slots mit duplizierten Häkern für halbe Stunden
+    """
+    if len(old_matrix) == 5:
+        # Für jeden Tag (Mo-Fr) erweitere die Slots:
+        # [7] bleibt 1, [16] wird 2, [17] wird 2, [18] wird 2, [19] bleibt 1
+        expanded = []
+        for day_row in old_matrix:
+            new_row = [
+                day_row[0],    # 7:00
+                day_row[1],    # 16:00
+                day_row[1],    # 16:30 (dupliziert)
+                day_row[2],    # 17:00
+                day_row[2],    # 17:30 (dupliziert)
+                day_row[3],    # 18:00
+                day_row[3],    # 18:30 (dupliziert)
+                day_row[4],    # 19:00
+            ]
+            expanded.append(new_row)
+        return expanded
+    return old_matrix
 
 # Partai-Zuordnungen (zyklisch vergeben)
 PARTEIEN = ["SPÖ", "ÖVP", "Die Grünen", "FPÖ", "NEOS", "KPÖ"]
@@ -194,7 +221,9 @@ def seed(reset: bool = True) -> None:
             db.add(person)
             db.flush()
             key_to_id[key] = person.id
-            for day, row in zip(DAYS, matrix, strict=True):
+            # Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
+            expanded_matrix = expand_matrix(matrix)
+            for day, row in zip(DAYS, expanded_matrix, strict=True):
                 for idx, available in enumerate(row):
                     if available:
                         db.add(Verfuegbarkeit(
@@ -230,7 +259,23 @@ def seed_data(db=None) -> None:
         should_close = False
 
     try:
-        # Nur laden wenn noch keine Personen existieren
+        # Super Admin erstellen (falls nicht vorhanden)
+        admin_email = "admin@ausschussplaner.local"
+        if db.query(User).filter(User.email == admin_email).first() is None:
+            password_hash = PasswordService.hash_password("admin123")
+            admin_user = User(
+                email=admin_email,
+                password_hash=password_hash,
+                vorname="System",
+                nachname="Administrator",
+                rolle=BenutzerRolle.SUPER_ADMIN,
+                aktiv=True,
+            )
+            db.add(admin_user)
+            db.flush()
+            print(f"[ADMIN] Super Admin erstellt: {admin_email} (Passwort: admin123)")
+
+        # Nur Personen laden wenn noch keine Personen existieren
         if db.query(Person).count() > 0:
             return
 
@@ -246,7 +291,9 @@ def seed_data(db=None) -> None:
             db.add(person)
             db.flush()
             key_to_id[key] = person.id
-            for day, row in zip(DAYS, matrix, strict=True):
+            # Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
+            expanded_matrix = expand_matrix(matrix)
+            for day, row in zip(DAYS, expanded_matrix, strict=True):
                 for idx, available in enumerate(row):
                     if available:
                         db.add(Verfuegbarkeit(
@@ -271,7 +318,7 @@ def seed_data(db=None) -> None:
             vorname="Test",
             nachname="Person",
             email="test@example.com",
-            password_hash=hash_password("test123"),
+            password_hash=PasswordService.hash_password("test123"),
             gremium="Demo",
             aktiv=True,
         )
@@ -299,9 +346,9 @@ def seed_data(db=None) -> None:
 
         db.commit()
         aktiv = sum(1 for p in PERSONS_DATA if p[4])
-        print(f"✅ Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
-              f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschüsse")
-        print(f"💡 Test Person Portal: test@example.com / test123")
+        print(f"[OK] Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
+              f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschuesse")
+        print(f"[INFO] Test Person Portal: test@example.com / test123")
 
         # Erstelle Gemeinderatsperiode P1 2025-2029
         seed_periode_data(db)
@@ -367,10 +414,10 @@ def seed_periode_data(db) -> None:
         ))
 
     db.commit()
-    print(f"✅ Gemeinderatsperiode erstellt: P1 {periode.start_jahr}-{periode.end_jahr}")
-    print(f"✅ {len(persons)} Personen zugeordnet")
-    print(f"✅ {len(ausschuesse)} Ausschüsse zugeordnet")
-    print(f"✅ 5 Jahrespläne erstellt (2025-2029)")
+    print(f"[OK] Gemeinderatsperiode erstellt: P1 {periode.start_jahr}-{periode.end_jahr}")
+    print(f"[OK] {len(persons)} Personen zugeordnet")
+    print(f"[OK] {len(ausschuesse)} Ausschuesse zugeordnet")
+    print(f"[OK] 5 Jahrespläne erstellt (2025-2029)")
 
 
 if __name__ == "__main__":
