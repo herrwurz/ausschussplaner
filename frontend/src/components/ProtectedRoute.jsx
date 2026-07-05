@@ -1,0 +1,33 @@
+import { Navigate } from 'react-router-dom'
+
+export default function ProtectedRoute({ children, requiredRole }) {
+  const token = localStorage.getItem('token')
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+
+  // Nicht authentifiziert
+  if (!token || !user.id) {
+    return <Navigate to="/admin/login" replace />
+  }
+
+  // Rolle nicht erforderlich (nur authentifiziert)
+  if (!requiredRole) {
+    return children
+  }
+
+  // Rolle nicht ausreichend
+  if (requiredRole === 'admin') {
+    if (!['super_admin', 'benutzer'].includes(user.rolle)) {
+      return <Navigate to="/obmann/dashboard" replace />
+    }
+  } else if (requiredRole === 'obmann') {
+    if (user.rolle !== 'obmann') {
+      return <Navigate to="/admin/login" replace />
+    }
+  } else if (requiredRole === 'super_admin') {
+    if (user.rolle !== 'super_admin') {
+      return <Navigate to="/admin/login" replace />
+    }
+  }
+
+  return children
+}

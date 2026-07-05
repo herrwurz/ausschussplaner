@@ -108,27 +108,63 @@ def post_transfer_agenda(payload: AgendaTransfer, db: Session = Depends(get_db))
 
 # ── Verfügbarkeiten ──
 @router.get("/{person_id}/verfuegbarkeit", response_model=list[VerfuegbarkeitOut])
-def get_verfuegbarkeit(person_id: int, db: Session = Depends(get_db)):
+def get_verfuegbarkeit(
+    person_id: int,
+    periode_id: int | None = None,
+    effektiv: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Verfügbarkeit einer Person.
+
+    - periode_id=None: Standardverfügbarkeit (Einträge ohne Periode)
+    - periode_id=X: nur die Einträge dieser Periode
+    - effektiv=True (mit periode_id): Perioden-Einträge, falls vorhanden,
+      sonst Fallback auf die Standardverfügbarkeit (wie in der Berechnung)
+    """
     if db.get(Person, person_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
-    return db.scalars(
-        select(Verfuegbarkeit).where(Verfuegbarkeit.person_id == person_id)
+    scope = db.scalars(
+        select(Verfuegbarkeit).where(
+            Verfuegbarkeit.person_id == person_id,
+            Verfuegbarkeit.periode_id == periode_id,
+        )
     ).all()
+    if effektiv and periode_id is not None and not scope:
+        scope = db.scalars(
+            select(Verfuegbarkeit).where(
+                Verfuegbarkeit.person_id == person_id,
+                Verfuegbarkeit.periode_id.is_(None),
+            )
+        ).all()
+    return scope
 
 
 @router.put("/{person_id}/verfuegbarkeit", response_model=list[VerfuegbarkeitOut])
 def set_verfuegbarkeit(
-    person_id: int, payload: VerfuegbarkeitBulk, db: Session = Depends(get_db)
+    person_id: int,
+    payload: VerfuegbarkeitBulk,
+    periode_id: int | None = None,
+    db: Session = Depends(get_db),
 ):
-    """Ersetzt die gesamte Verfügbarkeit einer Person."""
+    """Ersetzt die Verfügbarkeit einer Person für den gewählten Geltungsbereich.
+
+    periode_id=None ersetzt die Standardverfügbarkeit, periode_id=X nur die
+    Einträge dieser Periode (Standardeinträge bleiben unberührt).
+    """
     if db.get(Person, person_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
-    db.query(Verfuegbarkeit).filter(Verfuegbarkeit.person_id == person_id).delete()
+    db.query(Verfuegbarkeit).filter(
+        Verfuegbarkeit.person_id == person_id,
+        Verfuegbarkeit.periode_id == periode_id,
+    ).delete()
     for item in payload.items:
-        db.add(Verfuegbarkeit(person_id=person_id, **item.model_dump()))
+        db.add(Verfuegbarkeit(person_id=person_id, periode_id=periode_id, **item.model_dump()))
     db.commit()
     return db.scalars(
-        select(Verfuegbarkeit).where(Verfuegbarkeit.person_id == person_id)
+        select(Verfuegbarkeit).where(
+            Verfuegbarkeit.person_id == person_id,
+            Verfuegbarkeit.periode_id == periode_id,
+        )
     ).all()
 
 

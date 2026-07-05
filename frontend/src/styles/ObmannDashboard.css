@@ -1,0 +1,463 @@
+/**
+ * Obmann Dashboard Styles - Fluent 2
+ * Role-specific: Obmann committee management interface
+ */
+
+@import './tokens.css';
+
+/* ──────────────────────────────────────────────────────────
+   CONTAINER & LAYOUT
+   ────────────────────────────────────────────────────────── */
+
+.obmann-container {
+  min-height: 100vh;
+  background: var(--bg-neutral);
+}
+
+.obmann-header {
+  background: linear-gradient(135deg, var(--color-primary-700) 0%, var(--color-primary-600) 100%);
+  color: white;
+  padding: var(--padding-xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow-md);
+  border-bottom: 4px solid var(--color-secondary-400);
+}
+
+.obmann-header h1 {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.obmann-header-subtitle {
+  margin: var(--space-2) 0 0 0;
+  font-size: var(--font-size-sm);
+  opacity: 0.9;
+}
+
+.obmann-content {
+  padding: var(--padding-xl);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ──────────────────────────────────────────────────────────
+   LOADING STATE
+   ────────────────────────────────────────────────────────── */
+
+.obmann-loading {
+  padding: var(--padding-xl);
+  text-align: center;
+}
+
+.obmann-loading h2 {
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+}
+
+/* ──────────────────────────────────────────────────────────
+   ALERTS
+   ────────────────────────────────────────────────────────── */
+
+.obmann-alert {
+  padding: var(--padding-md);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--margin-lg);
+  border-left: 4px solid;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.obmann-alert-error {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.obmann-alert-success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.obmann-alert-close {
+  background: none;
+  border: none;
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  transition: opacity var(--transition-normal);
+  padding: 0;
+}
+
+.obmann-alert-close:hover {
+  opacity: 1;
+}
+
+/* ──────────────────────────────────────────────────────────
+   TABS
+   ────────────────────────────────────────────────────────── */
+
+.obmann-tabs {
+  display: flex;
+  gap: var(--gap-md);
+  margin-bottom: var(--margin-lg);
+  border-bottom: 2px solid var(--border-primary);
+  padding-bottom: var(--padding-md);
+  flex-wrap: wrap;
+}
+
+.obmann-tab-btn {
+  padding: var(--padding-sm) var(--padding-lg);
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  transition: all var(--transition-normal);
+  font-family: var(--font-family-base);
+}
+
+.obmann-tab-btn:hover {
+  color: var(--color-primary-600);
+  background: var(--bg-neutral);
+  border-radius: var(--radius-sm);
+}
+
+.obmann-tab-btn.active {
+  color: var(--color-primary-600);
+  border-bottom-color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+/* ──────────────────────────────────────────────────────────
+   SECTION HEADERS
+   ────────────────────────────────────────────────────────── */
+
+.obmann-section-header {
+  margin-bottom: var(--margin-lg);
+  padding-bottom: var(--padding-md);
+  border-bottom: 2px solid var(--border-secondary);
+}
+
+.obmann-section-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.obmann-empty-state {
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  padding: var(--padding-lg);
+  text-align: center;
+}
+
+/* ──────────────────────────────────────────────────────────
+   CARDS - Ausschüsse & Personen
+   ────────────────────────────────────────────────────────── */
+
+.obmann-card-grid {
+  display: grid;
+  gap: var(--gap-lg);
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+}
+
+.obmann-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: var(--padding-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-primary);
+  transition: all var(--transition-normal);
+}
+
+.obmann-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary-600);
+}
+
+.obmann-card.selected {
+  border: 2px solid var(--color-primary-600);
+  background: var(--color-primary-50);
+}
+
+.obmann-card-title {
+  margin: 0 0 var(--space-2) 0;
+  color: var(--color-primary-700);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.obmann-card-meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.obmann-card-meta + .obmann-card-meta {
+  margin-top: var(--space-2);
+}
+
+.obmann-card-button {
+  width: 100%;
+  margin-top: var(--margin-md);
+  padding: var(--padding-sm) var(--padding-md);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-600);
+  color: white;
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  transition: all var(--transition-normal);
+  font-family: var(--font-family-base);
+}
+
+.obmann-card-button:hover:not(:disabled) {
+  background: var(--color-primary-700);
+  box-shadow: var(--shadow-md);
+}
+
+.obmann-card-button:disabled {
+  background: var(--color-gray-300);
+  cursor: not-allowed;
+}
+
+.obmann-card-button.secondary {
+  background: var(--bg-neutral);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.obmann-card-button.secondary:hover:not(:disabled) {
+  background: var(--color-gray-100);
+}
+
+.obmann-card-button.active {
+  background: var(--color-primary-600);
+  color: white;
+}
+
+/* ──────────────────────────────────────────────────────────
+   RESULTS PANEL
+   ────────────────────────────────────────────────────────── */
+
+.obmann-results {
+  margin-top: var(--margin-md);
+  padding: var(--padding-lg);
+  background: var(--color-primary-50);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--color-primary-600);
+  font-size: var(--font-size-sm);
+}
+
+.obmann-results-title {
+  margin: 0 0 var(--space-2) 0;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-700);
+}
+
+.obmann-results-content {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  background: white;
+  padding: var(--padding-md);
+  border-radius: var(--radius-sm);
+}
+
+/* ──────────────────────────────────────────────────────────
+   VERFÜGBARKEIT DETAILS
+   ────────────────────────────────────────────────────────── */
+
+.obmann-verfuegbarkeit-section {
+  margin-top: var(--margin-xl);
+  padding: var(--padding-lg);
+  background: var(--bg-neutral);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+}
+
+.obmann-verfuegbarkeit-title {
+  margin-top: 0;
+  margin-bottom: var(--margin-md);
+  color: var(--color-primary-700);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  border-bottom: 2px solid var(--border-secondary);
+  padding-bottom: var(--padding-md);
+}
+
+.obmann-verfuegbarkeit-grid {
+  display: grid;
+  gap: var(--gap-md);
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.obmann-verfuegbarkeit-day {
+  padding: var(--padding-md);
+  background: white;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-secondary);
+}
+
+.obmann-verfuegbarkeit-day-title {
+  margin: 0 0 var(--space-2) 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.obmann-verfuegbarkeit-slot {
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.obmann-verfuegbarkeit-slot.available {
+  color: var(--color-success);
+  font-weight: var(--font-weight-semibold);
+}
+
+.obmann-verfuegbarkeit-slot.unavailable {
+  color: var(--color-danger);
+}
+
+/* ──────────────────────────────────────────────────────────
+   LOGOUT BUTTON
+   ────────────────────────────────────────────────────────── */
+
+.obmann-logout-btn {
+  padding: var(--padding-sm) var(--padding-lg);
+  background: var(--color-danger);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  transition: all var(--transition-normal);
+  font-family: var(--font-family-base);
+}
+
+.obmann-logout-btn:hover {
+  background: #dc2626;
+  box-shadow: var(--shadow-md);
+}
+
+/* ──────────────────────────────────────────────────────────
+   RESPONSIVE DESIGN
+   ────────────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .obmann-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  .obmann-content {
+    padding: var(--padding-lg);
+  }
+}
+
+@media (max-width: 768px) {
+  .obmann-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-md);
+    padding: var(--padding-lg);
+  }
+
+  .obmann-header h1 {
+    font-size: var(--font-size-xl);
+  }
+
+  .obmann-logout-btn {
+    align-self: flex-end;
+  }
+
+  .obmann-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .obmann-tabs {
+    flex-direction: column;
+    border-bottom: none;
+    border-left: 4px solid var(--border-primary);
+    padding-left: var(--padding-md);
+  }
+
+  .obmann-tab-btn {
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    padding-left: var(--padding-md);
+  }
+
+  .obmann-tab-btn.active {
+    border-left-color: var(--color-primary-600);
+    border-bottom: none;
+  }
+
+  .obmann-verfuegbarkeit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .obmann-content {
+    padding: var(--padding-md);
+  }
+}
+
+@media (max-width: 480px) {
+  .obmann-header {
+    padding: var(--padding-md);
+  }
+
+  .obmann-header h1 {
+    font-size: var(--font-size-lg);
+  }
+
+  .obmann-header-subtitle {
+    font-size: var(--font-size-xs);
+  }
+
+  .obmann-section-header h2 {
+    font-size: var(--font-size-lg);
+  }
+
+  .obmann-card {
+    padding: var(--padding-md);
+  }
+
+  .obmann-card-title {
+    font-size: var(--font-size-base);
+  }
+
+  .obmann-content {
+    padding: var(--padding-sm);
+  }
+}

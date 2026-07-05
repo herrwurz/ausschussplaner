@@ -16,9 +16,9 @@ Ausführung:  python -m app.db.seed
 from __future__ import annotations
 
 from datetime import date
-from app.core.security import hash_password
+from app.services.auth_service import AuthService, PasswordService
 from app.db.base import Base, SessionLocal, engine
-from app.models.enums import AusschussTyp, Rolle, Wochentag
+from app.models.enums import AusschussTyp, Rolle, Wochentag, BenutzerRolle
 from app.models.models import (
     Ausschuss,
     Gemeinderatsperiode,
@@ -27,12 +27,39 @@ from app.models.models import (
     Person,
     PeriodePerson,
     Sitzungsregel,
+    User,
     Verfuegbarkeit,
 )
 
-SLOTS = [7, 16, 17, 18, 19]
+SLOTS = [7, 16, 16.5, 17, 17.5, 18, 18.5, 19]
 DAYS = [Wochentag.MO, Wochentag.DI, Wochentag.MI, Wochentag.DO, Wochentag.FR]
 J, N = True, False
+
+# Hilfsfunktion: Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
+def expand_matrix(old_matrix):
+    """Konvertiert Person-Matrix mit 5 Slots zu 8 Slots.
+
+    Input: 5 Tage × 5 Slots [[Slot1_Mo, Slot2_Mo, ...], [Slot1_Di, Slot2_Di, ...], ...]
+    Output: 5 Tage × 8 Slots mit duplizierten Häkern für halbe Stunden
+    """
+    if len(old_matrix) == 5:
+        # Für jeden Tag (Mo-Fr) erweitere die Slots:
+        # [7] bleibt 1, [16] wird 2, [17] wird 2, [18] wird 2, [19] bleibt 1
+        expanded = []
+        for day_row in old_matrix:
+            new_row = [
+                day_row[0],    # 7:00
+                day_row[1],    # 16:00
+                day_row[1],    # 16:30 (dupliziert)
+                day_row[2],    # 17:00
+                day_row[2],    # 17:30 (dupliziert)
+                day_row[3],    # 18:00
+                day_row[3],    # 18:30 (dupliziert)
+                day_row[4],    # 19:00
+            ]
+            expanded.append(new_row)
+        return expanded
+    return old_matrix
 
 # Partai-Zuordnungen (zyklisch vergeben)
 PARTEIEN = ["SPÖ", "ÖVP", "Die Grünen", "FPÖ", "NEOS", "KPÖ"]
@@ -42,21 +69,21 @@ PERSONS_DATA = [
     ("p01", "Kerstin", "Suchan-Mayr", "Bürgermeisterin", True,
      [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
     ("p02", "Rafael", "Mugrauer", "Stadtrat", True,
-     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p03", "Birgit", "Seiler", "Stadträtin", True,
      [[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,J]]),
     ("p04", "Andreas", "Hofreither", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p05", "Andrea", "Prohaska", "Stadträtin", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p06", "Heinz", "Ströcker", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p07", "Hans", "Hintersteiner", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p08", "Eva", "Killinger-Spitz", "Stadträtin", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p09", "Andreas", "Pum", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p10", "Karl", "Bunzenberger", "Stadtrat", True,
      [[N,N,J,J,J],[J,J,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,N]]),
     ("p11", "Hannes", "Lugmayr", "Stadtrat", True,
@@ -98,18 +125,18 @@ PERSONS_DATA = [
     ("p29", "Sabine", "Abraham", "Gemeinderätin", True,
      [[N,N,J,J,N],[J,J,J,J,J],[J,J,J,J,J],[N,N,J,J,N],[N,J,J,N,N]]),
     ("p30", "Günter", "Helmreich", "Gemeinderat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p31", "Petra", "Hochrathner", "Gemeinderätin", True,
-     [[N,J,J,N,J],[J,J,J,J,J],[N,J,J,J,J],[N,N,J,N,J],[N,J,J,N,N]]),
+     [[N,J,J,N,J],[N,J,J,J,J],[N,J,J,J,J],[N,N,J,N,J],[N,J,J,N,N]]),
     ("p32", "Daniel", "Glötzner", "Gemeinderat", True,
-     [[N,N,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[N,J,J,J,N],[N,J,J,N,N]]),
+     [[N,N,J,J,J],[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,N],[N,J,J,N,N]]),
     # Hasenleitner Lothar: INAKTIV (Agenden an Plaimauer übergeben)
     ("p33", "Lothar", "Hasenleitner", "Gemeinderat", False,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     # Fabian Plaimauer: NEU, übernimmt Hasenleitners Agenden.
-    # Verfügbarkeit zunächst wie Hasenleitner (anpassbar via API).
+    # Verfügbarkeit nur ab 16:00 (Nachmittag).
     ("p34", "Fabian", "Plaimauer", "Gemeinderat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
 ]
 
 OB = Rolle.OBMANN
@@ -169,6 +196,12 @@ COMMITTEES_DATA = [
     ("Zivilschutz", AusschussTyp.STANDARD, [
         ("p11", OB), ("p03", ST), ("p08", MI), ("p10", MI),
         ("p15", MI), ("p17", MI), ("p23", MI), ("p26", MI)]),
+    # 14. Stadtratsitzung — alle Stadträte + Bürgermeisterin
+    # (wird automatisch mit allen "Stadtrat"-Gremium-Personen gefüllt in seed_periode_data)
+    ("Stadtratsitzung", AusschussTyp.STADTRAT, []),
+    # 15. Gemeinderatssitzung — alle 34 Personen
+    # (wird automatisch mit allen Personen gefüllt in seed_periode_data)
+    ("Gemeinderatssitzung", AusschussTyp.GEMEINDERAT, []),
 ]
 
 # Agenden, die Plaimauer (p34) von Hasenleitner (p33) übernimmt.
@@ -194,7 +227,9 @@ def seed(reset: bool = True) -> None:
             db.add(person)
             db.flush()
             key_to_id[key] = person.id
-            for day, row in zip(DAYS, matrix, strict=True):
+            # Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
+            expanded_matrix = expand_matrix(matrix)
+            for day, row in zip(DAYS, expanded_matrix, strict=True):
                 for idx, available in enumerate(row):
                     if available:
                         db.add(Verfuegbarkeit(
@@ -230,7 +265,23 @@ def seed_data(db=None) -> None:
         should_close = False
 
     try:
-        # Nur laden wenn noch keine Personen existieren
+        # Super Admin erstellen (falls nicht vorhanden)
+        admin_email = "admin@ausschussplaner.local"
+        if db.query(User).filter(User.email == admin_email).first() is None:
+            password_hash = PasswordService.hash_password("admin123")
+            admin_user = User(
+                email=admin_email,
+                password_hash=password_hash,
+                vorname="System",
+                nachname="Administrator",
+                rolle=BenutzerRolle.SUPER_ADMIN,
+                aktiv=True,
+            )
+            db.add(admin_user)
+            db.flush()
+            print(f"[ADMIN] Super Admin erstellt: {admin_email} (Passwort: admin123)")
+
+        # Nur Personen laden wenn noch keine Personen existieren
         if db.query(Person).count() > 0:
             return
 
@@ -246,7 +297,9 @@ def seed_data(db=None) -> None:
             db.add(person)
             db.flush()
             key_to_id[key] = person.id
-            for day, row in zip(DAYS, matrix, strict=True):
+            # Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
+            expanded_matrix = expand_matrix(matrix)
+            for day, row in zip(DAYS, expanded_matrix, strict=True):
                 for idx, available in enumerate(row):
                     if available:
                         db.add(Verfuegbarkeit(
@@ -259,49 +312,47 @@ def seed_data(db=None) -> None:
             db.add(a)
             db.flush()
             seen: set[int] = set()
-            for pkey, rolle in members:
-                pid = key_to_id[pkey]
-                if pid in seen:
-                    continue
-                seen.add(pid)
-                db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
-        # Test-Person für Person Portal
-        test_person = Person(
-            vorname="Test",
-            nachname="Person",
-            email="test@example.com",
-            password_hash=hash_password("test123"),
-            gremium="Demo",
-            aktiv=True,
-        )
-        db.add(test_person)
-        db.flush()
+            # Spezielle Logik für Stadtratsitzung + Gemeinderatssitzung
+            if typ == AusschussTyp.STADTRAT:
+                # Alle Personen mit gremium="Stadtrat" als Mitglieder, p01 als Obfrau
+                for pkey, vor, nach, gremium, aktiv, _ in PERSONS_DATA:
+                    if gremium == "Stadtrat" and aktiv:
+                        pid = key_to_id[pkey]
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        rolle = Rolle.OBMANN if pkey == "p01" else Rolle.MITGLIED
+                        db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
-        # Add test person to first committee
-        if db.query(Ausschuss).count() > 0:
-            first_committee = db.query(Ausschuss).first()
-            db.add(Mitgliedschaft(
-                person_id=test_person.id,
-                ausschuss_id=first_committee.id,
-                rolle=Rolle.MITGLIED
-            ))
+            elif typ == AusschussTyp.GEMEINDERAT:
+                # Alle aktiven Personen, p01 als Obfrau
+                for pkey, vor, nach, gremium, aktiv, _ in PERSONS_DATA:
+                    if aktiv:
+                        pid = key_to_id[pkey]
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        rolle = Rolle.OBMANN if pkey == "p01" else Rolle.MITGLIED
+                        db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
-        # Add some verfügbarkeiten for test person
-        for day in DAYS:
-            for hour in [9, 10, 14, 15, 16]:
-                db.add(Verfuegbarkeit(
-                    person_id=test_person.id,
-                    wochentag=day,
-                    stunde=hour,
-                    verfuegbar=True
-                ))
+            else:
+                # Standard: manuell definierte Mitglieder
+                for pkey, rolle in members:
+                    pid = key_to_id[pkey]
+                    if pid in seen:
+                        continue
+                    seen.add(pid)
+                    db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
+
+        # HINWEIS: Die frühere "Test Person" wurde entfernt — sie wurde als
+        # Mitglied in den ersten Ausschuss geseedet und hat dort (mit
+        # Vormittags-Verfügbarkeiten) jeden 100%-Termin verhindert.
 
         db.commit()
         aktiv = sum(1 for p in PERSONS_DATA if p[4])
-        print(f"✅ Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
-              f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschüsse")
-        print(f"💡 Test Person Portal: test@example.com / test123")
+        print(f"[OK] Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
+              f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschuesse")
 
         # Erstelle Gemeinderatsperiode P1 2025-2029
         seed_periode_data(db)
@@ -367,11 +418,14 @@ def seed_periode_data(db) -> None:
         ))
 
     db.commit()
-    print(f"✅ Gemeinderatsperiode erstellt: P1 {periode.start_jahr}-{periode.end_jahr}")
-    print(f"✅ {len(persons)} Personen zugeordnet")
-    print(f"✅ {len(ausschuesse)} Ausschüsse zugeordnet")
-    print(f"✅ 5 Jahrespläne erstellt (2025-2029)")
+    print(f"[OK] Gemeinderatsperiode erstellt: P1 {periode.start_jahr}-{periode.end_jahr}")
+    print(f"[OK] {len(persons)} Personen zugeordnet")
+    print(f"[OK] {len(ausschuesse)} Ausschuesse zugeordnet")
+    print(f"[OK] 5 Jahrespläne erstellt (2025-2029)")
 
 
 if __name__ == "__main__":
     seed()
+    db = SessionLocal()
+    seed_periode_data(db)
+    db.close()

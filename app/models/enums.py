@@ -5,11 +5,11 @@ import enum
 
 
 class AusschussTyp(str, enum.Enum):
-    """Ausschusstyp bestimmt die Beschlussfähigkeitsregel."""
+    """Ausschusstyp."""
 
-    STANDARD = "standard"   # Obmann + min. 4 weitere
-    POLY = "poly"           # Obmann + min. 2 weitere
-    KONTROLL = "kontroll"   # Obmann + min. 3 weitere
+    STANDARD = "standard"       # Beschlussfähig: Obmann + 50% der Mitglieder
+    STADTRAT = "stadtrat"       # Alle Stadträte + Bürgermeisterin müssen verfügbar sein
+    GEMEINDERAT = "gemeinderat" # Alle 33 Personen oder min. 50% + Bürgermeisterin
 
 
 class Rolle(str, enum.Enum):
@@ -52,6 +52,14 @@ class TerminStatus(str, enum.Enum):
     ALTERNATIV = "alternativ"                # Obmann + Stv. da, aber unter Quorum
     OBMANN_DA = "obmann_da"                  # nur Obmann da
     NICHT_BESCHLUSSFAEHIG = "nicht_beschlussfähig"
+
+
+class BenutzerRolle(str, enum.Enum):
+    """Rollen für Benutzer-Authentifizierung."""
+
+    SUPER_ADMIN = "super_admin"  # Ersteller & Betreuer (ich)
+    BENUTZER = "benutzer"        # Sekretärin, Bürgermeisterin, Amtsleiter
+    OBMANN = "obmann"            # Ausschuss-Obmann (begrenzte Rechte)
 
 
 class Partei(str, enum.Enum):

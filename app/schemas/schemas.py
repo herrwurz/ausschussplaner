@@ -85,7 +85,9 @@ class PersonOut(PersonBase):
 # ─────────────────────── Verfügbarkeit ────────────────────────
 class VerfuegbarkeitItem(BaseModel):
     wochentag: Wochentag
-    stunde: int = Field(ge=0, le=23)
+    # float: DB speichert auch halbe Stunden (16.5, 17.5, ...) — int würde
+    # GET/PUT für alle Personen mit solchen Einträgen mit 500 crashen
+    stunde: float = Field(ge=0, le=23.5)
     verfuegbar: bool = True
 
 
@@ -99,6 +101,7 @@ class VerfuegbarkeitOut(VerfuegbarkeitItem):
     model_config = ConfigDict(from_attributes=True)
     id: int
     person_id: int
+    periode_id: int | None = None  # None = Standard (alle Perioden)
 
 
 # ───────────────────────── Ausschuss ──────────────────────────
@@ -112,7 +115,6 @@ class AusschussBase(BaseModel):
     typ: AusschussTyp = AusschussTyp.STANDARD
     turnus: str = ""
     aktiv: bool = True
-    quorum_override: int | None = None
 
 
 class AusschussCreate(AusschussBase):
@@ -125,7 +127,6 @@ class AusschussUpdate(BaseModel):
     turnus: str | None = None
     aktiv: bool | None = None
     periode_id: int | None = None
-    quorum_override: int | None = None
     mitglieder: list[MitgliedItem] | None = None
 
 
@@ -167,11 +168,9 @@ class SitzungsregelBase(BaseModel):
     sitzung_minuten: int = 75
     pause_minuten: int = 15
     council_minuten: int = 240
-    quorum_standard: int = 4
-    quorum_poly: int = 2
-    quorum_kontroll: int = 3
     planungswochen: int = 2
     freitag_modus: str = "reserve"
+    max_ausschuesse_pro_tag: int = 2
 
 
 class SitzungsregelOut(SitzungsregelBase):
@@ -183,12 +182,20 @@ class SitzungsregelOut(SitzungsregelBase):
 class BerechnungRequest(BaseModel):
     """Parameter für die Terminberechnung."""
 
+    periode_id: int | None = None
     ausschuss_ids: list[int] | None = None  # None = alle aktiven
     planungswochen: int = 2
     freitag_modus: str = "reserve"  # reserve | normal | nein
     max_alternativen: int = 5
-    min_verfuegbarkeit: int = 100  # 0-100, nur Termine mit mind. dieser Quote
+    min_verfuegbarkeit: int = 0  # 0-100, nur Termine mit mind. dieser Quote (100 filtert fast alles weg!)
     start_datum: date | None = None  # Montag der ersten Planungswoche; aktiviert Abwesenheits-Check
+    max_ausschuesse_pro_tag: int = 2  # Maximum Ausschüsse pro Wochentag
+
+
+class MitgliedDetail(BaseModel):
+    """Mitglied mit seiner Rolle für die Detailanzeige."""
+    name: str
+    rolle: Rolle
 
 
 class TerminVorschlagOut(BaseModel):
@@ -207,6 +214,10 @@ class TerminVorschlagOut(BaseModel):
     status: TerminStatus
     empfehlung: str
     fehlende: list[str]
+    # Neue Validierungsdaten:
+    required_availability_hours: list[str] = []  # z.B. ["17:00", "18:00"]
+    anwesende_mitglieder: list[MitgliedDetail] = []  # wer ist verfügbar
+    fehlende_mitglieder: list[MitgliedDetail] = []  # wer fehlt
 
 
 class AusschussAnalyse(BaseModel):
@@ -214,19 +225,22 @@ class AusschussAnalyse(BaseModel):
 
     ausschuss_id: int
     ausschuss_name: str
-    typ: AusschussTyp
-    mitglieder: list[MitgliedOut]
-    top_termine: list[TerminVorschlagOut]
-    beschlussfaehig: list[TerminVorschlagOut]
-    alternativen: list[TerminVorschlagOut]
-    beste_je_tag: list[TerminVorschlagOut]
-    risiko: list[dict]
-    empfehlung_text: str
+    ausschuss_typ: AusschussTyp | None = None
+    mitglieder: list[MitgliedOut] = []
+    top_termine: list[TerminVorschlagOut] = []
+    beschlussfaehig: list[TerminVorschlagOut] = []
+    alternativen: list[TerminVorschlagOut] = []
+    beste_je_tag: list[TerminVorschlagOut] = []
+    risiko: list[dict] = []
+    empfehlung_text: str = ""
 
 
 class BerechnungResponse(BaseModel):
     analysen: list[AusschussAnalyse]
-    zusammenfassung: dict
+    start_datum: date | None = None
+    planungswochen: int = 2
+    zusammenfassung: dict | None = None
+    timestamp: str | None = None
 
 
 # ─────────────────────── Jahresplan ───────────────────────────

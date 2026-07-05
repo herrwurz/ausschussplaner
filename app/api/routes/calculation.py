@@ -18,8 +18,6 @@ def calculate(req: BerechnungRequest, db: Session = Depends(get_db)):
     result = run_calculation(db, req)
     if not result.analysen:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Keine aktiven Ausschüsse gefunden")
-    # Nicht automatisch speichern! Nur über "Fixieren" Button speichern
-    result.zusammenfassung["gespeicherte_vorschlaege"] = 0
     return result
 
 

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, person, perioden
+from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, person, perioden, auth, users, obmann
 from app.core.config import get_settings
 from app.db.base import Base, engine, SessionLocal
 from app.db.seed import seed_data
@@ -50,6 +50,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
+app.include_router(obmann.router, prefix="/api")
 app.include_router(persons.router, prefix="/api")
 app.include_router(committees.router, prefix="/api")
 app.include_router(absences.router, prefix="/api")
