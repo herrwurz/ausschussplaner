@@ -69,21 +69,21 @@ PERSONS_DATA = [
     ("p01", "Kerstin", "Suchan-Mayr", "Bürgermeisterin", True,
      [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
     ("p02", "Rafael", "Mugrauer", "Stadtrat", True,
-     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p03", "Birgit", "Seiler", "Stadträtin", True,
      [[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,J]]),
     ("p04", "Andreas", "Hofreither", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p05", "Andrea", "Prohaska", "Stadträtin", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p06", "Heinz", "Ströcker", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p07", "Hans", "Hintersteiner", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p08", "Eva", "Killinger-Spitz", "Stadträtin", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p09", "Andreas", "Pum", "Stadtrat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p10", "Karl", "Bunzenberger", "Stadtrat", True,
      [[N,N,J,J,J],[J,J,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,N]]),
     ("p11", "Hannes", "Lugmayr", "Stadtrat", True,
@@ -125,18 +125,18 @@ PERSONS_DATA = [
     ("p29", "Sabine", "Abraham", "Gemeinderätin", True,
      [[N,N,J,J,N],[J,J,J,J,J],[J,J,J,J,J],[N,N,J,J,N],[N,J,J,N,N]]),
     ("p30", "Günter", "Helmreich", "Gemeinderat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     ("p31", "Petra", "Hochrathner", "Gemeinderätin", True,
-     [[N,J,J,N,J],[J,J,J,J,J],[N,J,J,J,J],[N,N,J,N,J],[N,J,J,N,N]]),
+     [[N,J,J,N,J],[N,J,J,J,J],[N,J,J,J,J],[N,N,J,N,J],[N,J,J,N,N]]),
     ("p32", "Daniel", "Glötzner", "Gemeinderat", True,
-     [[N,N,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[N,J,J,J,N],[N,J,J,N,N]]),
+     [[N,N,J,J,J],[N,J,J,J,J],[N,J,J,J,J],[N,J,J,J,N],[N,J,J,N,N]]),
     # Hasenleitner Lothar: INAKTIV (Agenden an Plaimauer übergeben)
     ("p33", "Lothar", "Hasenleitner", "Gemeinderat", False,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
     # Fabian Plaimauer: NEU, übernimmt Hasenleitners Agenden.
-    # Verfügbarkeit zunächst wie Hasenleitner (anpassbar via API).
+    # Verfügbarkeit nur ab 16:00 (Nachmittag).
     ("p34", "Fabian", "Plaimauer", "Gemeinderat", True,
-     [[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J],[J,J,J,J,J]]),
+     [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
 ]
 
 OB = Rolle.OBMANN
@@ -196,6 +196,12 @@ COMMITTEES_DATA = [
     ("Zivilschutz", AusschussTyp.STANDARD, [
         ("p11", OB), ("p03", ST), ("p08", MI), ("p10", MI),
         ("p15", MI), ("p17", MI), ("p23", MI), ("p26", MI)]),
+    # 14. Stadtratsitzung — alle Stadträte + Bürgermeisterin
+    # (wird automatisch mit allen "Stadtrat"-Gremium-Personen gefüllt in seed_periode_data)
+    ("Stadtratsitzung", AusschussTyp.STADTRAT, []),
+    # 15. Gemeinderatssitzung — alle 34 Personen
+    # (wird automatisch mit allen Personen gefüllt in seed_periode_data)
+    ("Gemeinderatssitzung", AusschussTyp.GEMEINDERAT, []),
 ]
 
 # Agenden, die Plaimauer (p34) von Hasenleitner (p33) übernimmt.
@@ -306,49 +312,47 @@ def seed_data(db=None) -> None:
             db.add(a)
             db.flush()
             seen: set[int] = set()
-            for pkey, rolle in members:
-                pid = key_to_id[pkey]
-                if pid in seen:
-                    continue
-                seen.add(pid)
-                db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
-        # Test-Person für Person Portal
-        test_person = Person(
-            vorname="Test",
-            nachname="Person",
-            email="test@example.com",
-            password_hash=PasswordService.hash_password("test123"),
-            gremium="Demo",
-            aktiv=True,
-        )
-        db.add(test_person)
-        db.flush()
+            # Spezielle Logik für Stadtratsitzung + Gemeinderatssitzung
+            if typ == AusschussTyp.STADTRAT:
+                # Alle Personen mit gremium="Stadtrat" als Mitglieder, p01 als Obfrau
+                for pkey, vor, nach, gremium, aktiv, _ in PERSONS_DATA:
+                    if gremium == "Stadtrat" and aktiv:
+                        pid = key_to_id[pkey]
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        rolle = Rolle.OBMANN if pkey == "p01" else Rolle.MITGLIED
+                        db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
-        # Add test person to first committee
-        if db.query(Ausschuss).count() > 0:
-            first_committee = db.query(Ausschuss).first()
-            db.add(Mitgliedschaft(
-                person_id=test_person.id,
-                ausschuss_id=first_committee.id,
-                rolle=Rolle.MITGLIED
-            ))
+            elif typ == AusschussTyp.GEMEINDERAT:
+                # Alle aktiven Personen, p01 als Obfrau
+                for pkey, vor, nach, gremium, aktiv, _ in PERSONS_DATA:
+                    if aktiv:
+                        pid = key_to_id[pkey]
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        rolle = Rolle.OBMANN if pkey == "p01" else Rolle.MITGLIED
+                        db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
 
-        # Add some verfügbarkeiten for test person
-        for day in DAYS:
-            for hour in [9, 10, 14, 15, 16]:
-                db.add(Verfuegbarkeit(
-                    person_id=test_person.id,
-                    wochentag=day,
-                    stunde=hour,
-                    verfuegbar=True
-                ))
+            else:
+                # Standard: manuell definierte Mitglieder
+                for pkey, rolle in members:
+                    pid = key_to_id[pkey]
+                    if pid in seen:
+                        continue
+                    seen.add(pid)
+                    db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
+
+        # HINWEIS: Die frühere "Test Person" wurde entfernt — sie wurde als
+        # Mitglied in den ersten Ausschuss geseedet und hat dort (mit
+        # Vormittags-Verfügbarkeiten) jeden 100%-Termin verhindert.
 
         db.commit()
         aktiv = sum(1 for p in PERSONS_DATA if p[4])
         print(f"[OK] Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
               f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschuesse")
-        print(f"[INFO] Test Person Portal: test@example.com / test123")
 
         # Erstelle Gemeinderatsperiode P1 2025-2029
         seed_periode_data(db)
@@ -422,3 +426,6 @@ def seed_periode_data(db) -> None:
 
 if __name__ == "__main__":
     seed()
+    db = SessionLocal()
+    seed_periode_data(db)
+    db.close()

@@ -7,7 +7,9 @@ import enum
 class AusschussTyp(str, enum.Enum):
     """Ausschusstyp."""
 
-    STANDARD = "standard"   # Beschlussfähig: Obmann + 50% der Mitglieder
+    STANDARD = "standard"       # Beschlussfähig: Obmann + 50% der Mitglieder
+    STADTRAT = "stadtrat"       # Alle Stadträte + Bürgermeisterin müssen verfügbar sein
+    GEMEINDERAT = "gemeinderat" # Alle 33 Personen oder min. 50% + Bürgermeisterin
 
 
 class Rolle(str, enum.Enum):

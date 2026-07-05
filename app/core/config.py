@@ -37,11 +37,6 @@ class Settings(BaseSettings):
     default_pause_minutes: int = 15
     default_council_minutes: int = 240
 
-    # Beschlussfähigkeit: Obmann + X weitere Mitglieder
-    quorum_standard: int = 4
-    quorum_poly: int = 2
-    quorum_kontroll: int = 3
-
     # Planung
     planning_weeks: int = 2
 

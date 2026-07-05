@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.enums import AusschussTyp, Rolle, TerminStatus, Wochentag
+from app.models.enums import Rolle, TerminStatus, Wochentag
 from app.models.models import Ausschuss, Mitgliedschaft, Person, Sitzungsregel
 from app.schemas.schemas import (
     AusschussAnalyse,
@@ -72,7 +72,15 @@ def _load_committee_input(
             day: set() for day in sched.WEEKDAYS
         }
 
-        for verfug in person.verfuegbarkeiten:
+        # Perioden-spezifische Verfügbarkeit überschreibt die Standardverfügbarkeit:
+        # Gibt es Einträge für die Periode des Ausschusses, gelten NUR diese;
+        # sonst Fallback auf Einträge ohne Periode (periode_id IS NULL).
+        scope = ausschuss.periode_id
+        relevante = [v for v in person.verfuegbarkeiten if v.periode_id == scope]
+        if not relevante and scope is not None:
+            relevante = [v for v in person.verfuegbarkeiten if v.periode_id is None]
+
+        for verfug in relevante:
             if verfug.verfuegbar:
                 # Konvertiere stunde float zu Zeit-String
                 hour = int(verfug.stunde)  # z.B. 17
@@ -82,9 +90,13 @@ def _load_committee_input(
 
         # Sammle Abwesenheits-Daten im Planungszeitraum
         absent_dates = frozenset()
-        if start_date is not None and end_date is not None:
-            # Lade Abwesenheiten aus Eager-Loaded-Rel. oder DB
-            abwesenheiten = person.abwesenheiten
+        if start_date is not None and end_date is not None and db is not None:
+            # Lade Abwesenheiten direkt aus DB für diesen Zeitraum
+            abwesenheiten = db.query(Abwesenheit).filter(
+                Abwesenheit.person_id == person.id,
+                Abwesenheit.von <= end_date,
+                Abwesenheit.bis >= start_date,
+            ).all()
             for ab in abwesenheiten:
                 # Finde alle Daten im Bereich [von, bis] die im Planungszeitraum liegen
                 ab_start = max(ab.von, start_date)
@@ -135,6 +147,8 @@ def _evaluation_to_termin(
     days_offset = (week - 1) * 7 + weekday_offset[eval_result.weekday]
     datum = start_date + timedelta(days=days_offset)
 
+    from app.schemas.schemas import MitgliedDetail
+
     return TerminVorschlagOut(
         woche=week,
         wochentag=eval_result.weekday,
@@ -151,6 +165,10 @@ def _evaluation_to_termin(
         status=eval_result.status,
         empfehlung=eval_result.status.name,
         fehlende=[m.name for m in eval_result.missing_members],
+        # Validierungsdaten:
+        required_availability_hours=eval_result.required_availability_hours,
+        anwesende_mitglieder=[MitgliedDetail(name=m.name, rolle=m.rolle) for m in eval_result.present_members],
+        fehlende_mitglieder=[MitgliedDetail(name=m.name, rolle=m.rolle) for m in eval_result.missing_members],
     )
 
 
@@ -159,21 +177,28 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
 
     regel = _load_regel(db)
     weeks = req.planungswochen or regel.planungswochen
-    start_date = req.start_datum or date.today()
+    freitag_modus = req.freitag_modus or regel.freitag_modus
 
-    # Lade Ausschüsse mit eager-loaded Verfügbarkeiten und Abwesenheiten
+    # F1: Die gesamte Datumsberechnung (Woche/Wochentag -> Datum) setzt voraus,
+    # dass start_date ein MONTAG ist. Nicht-Montage (inkl. Default "heute")
+    # werden auf den NÄCHSTEN Montag normalisiert, sonst passen die
+    # ausgegebenen Daten nicht zu den Wochentags-Labels und Abwesenheiten
+    # werden gegen falsche Kalendertage geprüft.
+    start_date = req.start_datum or date.today()
+    if start_date.weekday() != 0:
+        start_date += timedelta(days=7 - start_date.weekday())
+
+    # Lade Ausschüsse mit eager-loaded Verfügbarkeiten
     stmt = (
         select(Ausschuss)
         .options(
             selectinload(Ausschuss.mitgliedschaften)
             .selectinload(Mitgliedschaft.person)
             .selectinload(Person.verfuegbarkeiten),
-            selectinload(Ausschuss.mitgliedschaften)
-            .selectinload(Mitgliedschaft.person)
-            .selectinload(Person.abwesenheiten),
         )
         .where(Ausschuss.aktiv.is_(True))
     )
+    # Abwesenheiten werden lazy-loaded in _load_committee_input()
     if req.ausschuss_ids:
         stmt = stmt.where(Ausschuss.id.in_(req.ausschuss_ids))
     if req.periode_id:
@@ -188,7 +213,9 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
 
     for ausschuss in ausschuesse:
         committee_input = _load_committee_input(ausschuss, start_date=start_date, weeks=weeks, db=db)
-        evaluations = sched.evaluate_committee_slots(committee_input, weeks=weeks, start_date=start_date)
+        evaluations = sched.evaluate_committee_slots(
+            committee_input, weeks=weeks, start_date=start_date, freitag_modus=freitag_modus
+        )
         filtered = [e for e in evaluations if e.quote >= min_quote]
         all_evaluations_by_committee[ausschuss.id] = filtered
 
@@ -201,35 +228,73 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
     for ausschuss in ausschuesse:
         evaluations = all_evaluations_by_committee.get(ausschuss.id, [])
         if not evaluations:
+            # Ausschuss NICHT stillschweigend weglassen, sondern mit Hinweis ausweisen
+            analysen.append(AusschussAnalyse(
+                ausschuss_id=ausschuss.id,
+                ausschuss_name=ausschuss.name,
+                ausschuss_typ=ausschuss.typ,
+                empfehlung_text=(
+                    f"Kein Termin mit mind. {min_quote}% Verfügbarkeit gefunden. "
+                    "Mindestquote senken oder Verfügbarkeiten prüfen."
+                ),
+            ))
             continue
 
-        # Filtere nach Typ
+        # Filtere nach Statusklasse (Spez §7 b–c)
         top_termine = [e for e in evaluations if e.full_attendance]
         besch_termine = [e for e in evaluations if e.quorate and not e.full_attendance]
+        alt_termine = [e for e in evaluations if e.status == TerminStatus.ALTERNATIV]
 
-        # Global assigned slot
+        # Global assigned slot (conflict-free from backtracking)
         assigned = global_schedule.assigned.get(ausschuss.id)
 
         # Konvertiere zu TerminVorschlagOut
         top_vorschlaege = [_evaluation_to_termin(e, start_date, e.week) for e in top_termine[:max_alt]]
         besch_vorschlaege = [_evaluation_to_termin(e, start_date, e.week) for e in besch_termine[:max_alt]]
+        alt_vorschlaege = [_evaluation_to_termin(e, start_date, e.week) for e in alt_termine[:max_alt]]
 
-        # Beste Termin: entweder global assigned oder beste Option
+        # Beste Termine: ZUERST der assigned (conflict-free), dann TOP, dann Beschlussfähige
         beste = []
         if assigned:
-            beste = [_evaluation_to_termin(assigned, start_date, assigned.week)]
-        elif top_vorschlaege:
-            beste = top_vorschlaege[:1]
-        elif besch_vorschlaege:
-            beste = besch_vorschlaege[:1]
+            # Der assigned Termin ist IMMER der TOP (erste Option für Kalender)
+            assigned_termin = _evaluation_to_termin(assigned, start_date, assigned.week)
+            beste.append(assigned_termin)
+
+        # Füge weitere TOP-Termine hinzu (sortiert nach Woche)
+        for termin in sorted(top_vorschlaege, key=lambda t: (t.woche, t.start)):
+            if len(beste) >= max_alt:
+                break
+            if (
+                assigned
+                and termin.woche == assigned_termin.woche
+                and termin.wochentag == assigned_termin.wochentag
+                and termin.start == assigned_termin.start
+            ):
+                continue  # Skip wenn schon added (gleicher Tag + gleiche Zeit)
+            beste.append(termin)
+
+        # Füge beschlussfähige Termine hinzu
+        for termin in sorted(besch_vorschlaege, key=lambda t: (t.woche, t.start)):
+            if len(beste) >= max_alt:
+                break
+            beste.append(termin)
+
+        # Fülle Mitglieder-Liste
+        from app.schemas.schemas import MitgliedOut
+        mitglieder_list = [
+            MitgliedOut(person_id=m.person_id, rolle=m.rolle, name=m.person.name)
+            for m in ausschuss.mitgliedschaften
+            if m.rolle in (Rolle.OBMANN, Rolle.OBMANN_STELLVERTRETER, Rolle.MITGLIED) and m.person.aktiv
+        ]
 
         analyse = AusschussAnalyse(
             ausschuss_id=ausschuss.id,
             ausschuss_name=ausschuss.name,
             ausschuss_typ=ausschuss.typ,
+            mitglieder=mitglieder_list,
             top_termine=top_vorschlaege,
             beschlussfaehig=besch_vorschlaege,
-            alternativen=[],
+            alternativen=alt_vorschlaege,
             beste_je_tag=beste,
         )
         analysen.append(analyse)

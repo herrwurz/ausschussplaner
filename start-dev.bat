@@ -17,6 +17,9 @@ if not exist ".venv" (
     exit /b 1
 )
 
+echo Running database migrations (idempotent)...
+.venv\Scripts\python.exe migrate_verfuegbarkeit_periode.py
+
 echo Starting Backend Server (FastAPI)...
 start "AusschussPlaner Backend" cmd /k ^
     ".venv\Scripts\activate.bat && python -m uvicorn app.main:app --reload"
@@ -30,11 +33,10 @@ start "AusschussPlaner Frontend" cmd /k ^
 echo.
 echo ====================================
 echo Services Starting:
-echo - Backend: http://localhost:8000
-echo - Frontend: http://localhost:5173
-echo - Test Dashboard: http://localhost:5173/test (MAIN)
-echo - API Docs: http://localhost:8000/docs
-echo - Admin UI: http://localhost:8000/admin/login (admin123)
+echo - Frontend:  http://localhost:5173
+echo - Admin UI:  http://localhost:5173/admin/login (admin@ausschussplaner.local / admin123)
+echo - Backend:   http://localhost:8000
+echo - API Docs:  http://localhost:8000/docs
 echo ====================================
 echo.
 echo Press Ctrl+C in each window to stop services

@@ -111,12 +111,6 @@ export default function PersonDashboard() {
               <Link to="/person/sitzungen" className="person-nav-card-link primary full-width">
                 Sitzungstermine
               </Link>
-              <Link to="/person/my-bookings" className="person-nav-card-link info full-width">
-                📋 Meine Buchungen
-              </Link>
-              <Link to="/smart-search" className="person-nav-card-link success full-width">
-                📊 Intelligente Terminsuche
-              </Link>
             </div>
           </div>
         </div>

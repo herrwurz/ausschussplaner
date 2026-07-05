@@ -65,9 +65,16 @@ if exist "frontend\node_modules" (
 
 echo.
 echo Step 4/4: Running Database Migrations...
-python -m alembic upgrade head
+REM Alembic ist (noch) nicht konfiguriert - Migrationen laufen als Skripte (idempotent)
+python migrate_verfuegbarkeit_periode.py
 if errorlevel 1 (
-    echo WARNING: Database migration encountered an issue (this may be expected)
+    echo WARNING: Database migration encountered an issue
+)
+
+REM Admin-Login sicherstellen (legt admin@ausschussplaner.local an bzw. setzt Passwort zurueck)
+python create_admin.py
+if errorlevel 1 (
+    echo WARNING: Admin-Anlage fehlgeschlagen
 )
 
 echo.
@@ -80,8 +87,9 @@ echo 1. Run 'start-dev.bat' to start development servers
 echo 2. Or run 'start-docker.bat' to use Docker
 echo.
 echo Services will be available at:
-echo - Backend: http://localhost:8000
-echo - Frontend: http://localhost:5173
-echo - API Docs: http://localhost:8000/docs
+echo - Frontend:  http://localhost:5173
+echo - Admin UI:  http://localhost:5173/admin/login (admin@ausschussplaner.local / admin123)
+echo - Backend:   http://localhost:8000
+echo - API Docs:  http://localhost:8000/docs
 echo.
 pause

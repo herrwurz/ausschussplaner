@@ -1,168 +1,223 @@
-"""Tests der reinen Berechnungs-Engine (Masterprompt-Regeln)."""
+"""Tests der reinen Berechnungs-Engine (aktuelle slot-basierte API).
+
+Fachliche Festlegungen (2026-07):
+- Randslots 07:00–08:30 und 19:00–20:30 sind gültige Sitzungszeiten; das
+  Häkchen "07:00" bzw. "19:00" deckt den gesamten Block ab.
+- Quorum STANDARD: Obmann anwesend + mind. 50% der Mitglieder
+  (quorum_override ersetzt die 50%-Regel, nicht die Obmann-Pflicht).
+- Priorität: top > beschlussfähig > Obmann+Stv. > nur Obmann;
+  Freitag je eine Stufe schlechter. freitag_modus="nein" schließt Freitag aus.
+"""
 from __future__ import annotations
 
 from datetime import date
 
 from app.models.enums import AusschussTyp, Rolle, TerminStatus, Wochentag
 from app.services.scheduler import (
+    TIME_SLOTS,
     CommitteeInput,
     MemberInput,
-    allowed_starts,
-    calculate_committee,
-    is_present,
-    required_hours,
+    SlotEvaluation,
+    evaluate_committee_slots,
+    global_schedule_committees,
+    is_person_available_for_slot,
+    is_quorate,
+    priority_key,
+    status_rank,
 )
 
+SLOT_BY_START = {s.start_time: s for s in TIME_SLOTS}
 
-def test_required_hours_masterprompt_examples():
-    # Neue Logik: Nur Startstunde zählt, nicht alle Stunden während der Sitzung
-    assert required_hours(7 * 60, 90) == [7]
-    assert required_hours(16 * 60, 90) == [16]
-    assert required_hours(17 * 60, 90) == [17]
-    assert required_hours(18 * 60 + 30, 90) == [18]
+MONDAY = date(2026, 7, 6)  # Montag W1
 
 
-def test_person_partial_availability_not_present():
-    """18:00=Nein, 19:00=Ja -> nicht anwesend bei 18:30-Start."""
-    m = MemberInput(1, "X", Rolle.MITGLIED, {Wochentag.MO: {19}})
-    assert is_present(m, Wochentag.MO, 18 * 60 + 30, 90) is False
-
-
-def test_person_full_block_present():
-    m = MemberInput(1, "X", Rolle.MITGLIED, {Wochentag.MO: {18, 19}})
-    assert is_present(m, Wochentag.MO, 18 * 60 + 30, 90) is True
-
-
-def test_allowed_starts_includes_half_hours():
-    starts = allowed_starts()
-    assert 16 * 60 in starts
-    assert 16 * 60 + 30 in starts
-
-
-def test_only_real_members_counted():
-    """Mitglieder ohne gültige Rolle dürfen nicht gezählt werden.
-
-    (Hier implizit: nur übergebene MemberInputs zählen — die DB-Schicht
-    filtert '-'/leer bereits heraus.)
-    """
-    members = [
-        MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.MO: {16, 17}}),
-        MemberInput(2, "M", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
-    ]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members),
-        weeks=1,
+def member(pid, rolle=Rolle.MITGLIED, avail=None, absent=frozenset(), name=None):
+    return MemberInput(
+        person_id=pid,
+        name=name or f"P{pid}",
+        rolle=rolle,
+        availability=avail or {},
+        absent_dates=frozenset(absent),
     )
-    assert len(res.members) == 2
 
+
+def committee(members, typ=AusschussTyp.STANDARD, quorum_override=None):
+    return CommitteeInput(1, "Test", typ, members, quorum_override)
+
+
+# ── Slot-Abdeckung ────────────────────────────────────────────────────────────
+
+def test_slot_requires_all_hours():
+    """17:00–18:30 verlangt die Stunden 17 UND 18."""
+    slot = SLOT_BY_START["17:00"]
+    m_full = member(1, avail={Wochentag.MO: {"17:00", "18:00"}})
+    m_partial = member(2, avail={Wochentag.MO: {"18:00"}})
+    assert is_person_available_for_slot(m_full, Wochentag.MO, slot) is True
+    assert is_person_available_for_slot(m_partial, Wochentag.MO, slot) is False
+
+
+def test_edge_slots_exist_and_cover_full_block():
+    """07:00–08:30 und 19:00–20:30 sind gültige Slots; das jeweilige
+    Häkchen deckt laut fachlicher Festlegung den ganzen Block ab."""
+    early = SLOT_BY_START["07:00"]
+    late = SLOT_BY_START["19:00"]
+    assert early.end_time == "08:30"
+    assert late.end_time == "20:30"
+    m = member(1, avail={Wochentag.MO: {"07:00", "19:00"}})
+    assert is_person_available_for_slot(m, Wochentag.MO, early) is True
+    assert is_person_available_for_slot(m, Wochentag.MO, late) is True
+
+
+def test_half_hour_start_requires_both_full_hours():
+    """18:30-Start: 18:00=Nein, 19:00=Ja -> nicht anwesend."""
+    slot = SLOT_BY_START["18:30"]
+    m = member(1, avail={Wochentag.MO: {"19:00"}})
+    assert is_person_available_for_slot(m, Wochentag.MO, slot) is False
+
+
+# ── Quorum ────────────────────────────────────────────────────────────────────
 
 def test_obmann_absent_means_not_quorate():
-    """Ohne Obmann nie beschlussfähig, egal wie viele Mitglieder."""
     members = [
-        MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.MO: set()}),  # nie da
-        MemberInput(2, "A", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
-        MemberInput(3, "B", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
-        MemberInput(4, "C", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
+        member(1, Rolle.OBMANN),
+        member(2), member(3), member(4),
     ]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members), weeks=1
-    )
-    mo_slots = [s for s in res.all_slots if s.day == Wochentag.MO]
-    assert all(s.status == TerminStatus.NICHT_BESCHLUSSFAEHIG for s in mo_slots)
+    c = committee(members)
+    assert is_quorate(c, members, present_ids={2, 3, 4}) is False
 
 
-def test_full_attendance_is_top():
-    members = [
-        MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.DI: {16, 17}}),
-        MemberInput(2, "A", Rolle.MITGLIED, {Wochentag.DI: {16, 17}}),
-        MemberInput(3, "B", Rolle.MITGLIED, {Wochentag.DI: {16, 17}}),
-    ]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members), weeks=1
-    )
-    tops = [s for s in res.all_slots if s.status == TerminStatus.TOP and s.day == Wochentag.DI]
-    assert len(tops) > 0
-    assert all(s.quote == 100 for s in tops)
+def test_standard_quorum_is_chair_plus_half():
+    members = [member(1, Rolle.OBMANN), member(2), member(3), member(4)]
+    c = committee(members)
+    assert is_quorate(c, members, present_ids={1}) is False        # 1 < 2
+    assert is_quorate(c, members, present_ids={1, 2}) is True      # 2 >= 2
+
+
+def test_quorum_override_replaces_half_rule():
+    members = [member(1, Rolle.OBMANN), member(2), member(3), member(4)]
+    c = committee(members, quorum_override=4)
+    assert is_quorate(c, members, present_ids={1, 2}) is False     # 2 < 4
+    assert is_quorate(c, members, present_ids={1, 2, 3, 4}) is True
 
 
 def test_duplicate_member_deduplicated():
+    """Dieselbe person_id darf nicht doppelt zählen."""
+    avail = {Wochentag.MO: {"17:00", "18:00"}}
     members = [
-        MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.MO: {16, 17}}),
-        MemberInput(1, "Ob dup", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
+        member(1, Rolle.OBMANN, avail),
+        member(1, Rolle.MITGLIED, avail, name="Duplikat"),
+        member(2, Rolle.MITGLIED, avail),
     ]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members), weeks=1
-    )
-    assert len(res.members) == 1
+    res = evaluate_committee_slots(committee(members), weeks=1)
+    assert all(e.total_members == 2 for e in res)
 
 
-# ── Abwesenheits-Tests ────────────────────────────────────────────────────────
+# ── Status & Priorität ────────────────────────────────────────────────────────
+
+def test_full_attendance_is_top():
+    avail = {Wochentag.DI: {"16:00", "17:00"}}
+    members = [member(1, Rolle.OBMANN, avail), member(2, avail=avail)]
+    res = evaluate_committee_slots(committee(members), weeks=1)
+    tops = [e for e in res if e.status == TerminStatus.TOP]
+    assert tops and all(e.quote == 100 for e in tops)
+
+
+def test_chair_and_deputy_under_quorum_is_alternativ():
+    avail = {Wochentag.MO: {"17:00", "18:00"}}
+    members = [
+        member(1, Rolle.OBMANN, avail),
+        member(2, Rolle.OBMANN_STELLVERTRETER, avail),
+        member(3), member(4), member(5), member(6),  # nie verfügbar
+    ]
+    res = evaluate_committee_slots(committee(members), weeks=1)
+    mo_17 = [e for e in res if e.weekday == Wochentag.MO and e.start_time == "17:00"]
+    assert mo_17 and mo_17[0].status == TerminStatus.ALTERNATIV
+
+
+def test_quorate_ranks_above_chair_plus_deputy():
+    """Beschlussfähig (ohne Stv.) muss besser sein als Obmann+Stv. unter Quorum."""
+    avail_mo = {Wochentag.MO: {"17:00", "18:00"}}
+    avail_di = {Wochentag.DI: {"17:00", "18:00"}}
+    members = [
+        member(1, Rolle.OBMANN, {**avail_mo, **avail_di}),
+        member(2, Rolle.OBMANN_STELLVERTRETER, avail_mo),   # nur Mo
+        member(3, avail=avail_di), member(4, avail=avail_di),  # nur Di
+        member(5), member(6),
+    ]
+    res = evaluate_committee_slots(committee(members), weeks=1)
+    best = res[0]
+    # Di: Obmann + 2 Mitglieder = 3 von 6 -> beschlussfähig (Rang 2)
+    # Mo: Obmann + Stv. = 2 von 6 -> ALTERNATIV (Rang 4)
+    assert best.weekday == Wochentag.DI
+    assert best.status == TerminStatus.BESCHLUSSFAEHIG
+
+
+def test_friday_is_one_rank_worse():
+    avail = {Wochentag.FR: {"17:00", "18:00"}, Wochentag.DI: {"17:00", "18:00"}}
+    members = [member(1, Rolle.OBMANN, avail), member(2, avail=avail)]
+    res = evaluate_committee_slots(committee(members), weeks=1)
+    fr = next(e for e in res if e.weekday == Wochentag.FR and e.full_attendance)
+    di = next(e for e in res if e.weekday == Wochentag.DI and e.full_attendance)
+    assert status_rank(di) == 0
+    assert status_rank(fr) == 1
+    assert priority_key(di) < priority_key(fr)
+    assert res[0].weekday == Wochentag.DI
+
+
+def test_freitag_modus_nein_excludes_friday():
+    avail = {Wochentag.FR: {"17:00", "18:00"}}
+    members = [member(1, Rolle.OBMANN, avail)]
+    res = evaluate_committee_slots(committee(members), weeks=1, freitag_modus="nein")
+    assert all(e.weekday != Wochentag.FR for e in res)
+
+
+# ── Abwesenheiten & Datum ─────────────────────────────────────────────────────
 
 def test_absence_blocks_otherwise_available_slot():
-    """Person mit Abwesenheit am Montag wird nicht als anwesend gezählt."""
-    monday = date(2026, 6, 8)  # Montag
-    m = MemberInput(
-        1, "X", Rolle.MITGLIED,
-        {Wochentag.MO: {16, 17}},
-        absent_dates=frozenset([monday]),
+    slot = SLOT_BY_START["16:00"]
+    m = member(1, avail={Wochentag.MO: {"16:00", "17:00"}}, absent=[MONDAY])
+    assert is_person_available_for_slot(m, Wochentag.MO, slot, meeting_date=MONDAY) is False
+    assert is_person_available_for_slot(m, Wochentag.MO, slot, meeting_date=None) is True
+
+
+def test_absence_applies_to_correct_week():
+    """Abwesenheit am Di W1 blockiert nicht Di W2."""
+    tuesday_w1 = date(2026, 7, 7)
+    avail = {Wochentag.DI: {"17:00", "18:00"}}
+    members = [member(1, Rolle.OBMANN, avail, absent=[tuesday_w1])]
+    res = evaluate_committee_slots(committee(members), weeks=2, start_date=MONDAY)
+    di_w1 = [e for e in res if e.weekday == Wochentag.DI and e.week == 1]
+    di_w2 = [e for e in res if e.weekday == Wochentag.DI and e.week == 2]
+    assert all(e.attendance_count == 0 for e in di_w1)
+    assert any(e.attendance_count == 1 for e in di_w2)
+
+
+# ── Globaler Scheduler ────────────────────────────────────────────────────────
+
+def _make_eval(cid, week, weekday, start, end):
+    return SlotEvaluation(
+        committee_id=cid, committee_name=f"C{cid}", week=week, weekday=weekday,
+        start_time=start, end_time=end, required_availability_hours=[],
+        present_members=[], missing_members=[], attendance_count=3,
+        total_members=3, attendance_rate=1.0, chair_present=True,
+        deputy_chair_present=False, quorate=True, full_attendance=True,
     )
-    assert is_present(m, Wochentag.MO, 16 * 60, 90, slot_date=monday) is False
 
 
-def test_absence_on_other_day_does_not_block():
-    """Abwesenheit am Montag blockiert nicht am Dienstag."""
-    monday = date(2026, 6, 8)
-    tuesday = date(2026, 6, 9)
-    m = MemberInput(
-        1, "X", Rolle.MITGLIED,
-        {Wochentag.DI: {16, 17}},
-        absent_dates=frozenset([monday]),
-    )
-    assert is_present(m, Wochentag.DI, 16 * 60, 90, slot_date=tuesday) is True
+def test_global_schedule_avoids_overlap():
+    opts1 = [_make_eval(1, 1, Wochentag.MO, "17:00", "18:30"),
+             _make_eval(1, 2, Wochentag.MO, "17:00", "18:30")]
+    opts2 = [_make_eval(2, 1, Wochentag.MO, "17:00", "18:30"),
+             _make_eval(2, 2, Wochentag.MO, "17:00", "18:30")]
+    schedule = global_schedule_committees({1: opts1, 2: opts2})
+    a1, a2 = schedule.assigned[1], schedule.assigned[2]
+    assert (a1.week, a1.weekday) != (a2.week, a2.weekday) or a1.start_time != a2.start_time
 
 
-def test_absence_reduces_attendance_in_calculation():
-    """Wenn der Obmann am ersten Montag der Planung abwesend ist, darf kein
-    beschlussfähiger Termin an diesem Tag entstehen."""
-    start = date(2026, 6, 8)  # Montag W1
-    monday_w1 = date(2026, 6, 8)
-    members = [
-        MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.MO: {16, 17}},
-                    absent_dates=frozenset([monday_w1])),
-        MemberInput(2, "A", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
-        MemberInput(3, "B", Rolle.MITGLIED, {Wochentag.MO: {16, 17}}),
-    ]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members),
-        weeks=1,
-        start_date=start,
-    )
-    mo_w1 = [
-        s for s in res.all_slots
-        if s.day == Wochentag.MO and s.datum == monday_w1
-    ]
-    assert all(s.status == TerminStatus.NICHT_BESCHLUSSFAEHIG for s in mo_w1)
-
-
-def test_slot_datum_set_when_start_date_given():
-    """Slot.datum wird korrekt aus start_date + Woche + Tag berechnet."""
-    start = date(2026, 6, 8)  # Montag
-    members = [MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.DI: {16, 17}})]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members),
-        weeks=2,
-        start_date=start,
-    )
-    di_w2 = [s for s in res.all_slots if s.day == Wochentag.DI and s.week == 2]
-    assert di_w2, "Keine Slots für Di W2 gefunden"
-    expected = date(2026, 6, 16)  # start + 8 Tage
-    assert all(s.datum == expected for s in di_w2)
-
-
-def test_no_start_date_leaves_datum_none():
-    """Ohne start_date bleibt Slot.datum None (Rückwärtskompatibilität)."""
-    members = [MemberInput(1, "Ob", Rolle.OBMANN, {Wochentag.MO: {16, 17}})]
-    res = calculate_committee(
-        CommitteeInput(1, "C", AusschussTyp.POLY, members), weeks=1
-    )
-    assert all(s.datum is None for s in res.all_slots)
+def test_global_schedule_skips_committee_without_options():
+    """Leere Optionsliste darf weder crashen noch andere Zuweisungen verhindern."""
+    opts = [_make_eval(2, 1, Wochentag.MO, "17:00", "18:30")]
+    schedule = global_schedule_committees({1: [], 2: opts})
+    assert 1 not in schedule.assigned
+    assert 2 in schedule.assigned
+    assert any("1" in c for c in schedule.conflicts)

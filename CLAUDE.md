@@ -76,13 +76,14 @@ app/
     person_service.py        # Agenden-Übernahme / Nachfolge
     jahresplan_service.py    # Jahresplan anlegen, auflisten, kopieren
   api/routes/
-    persons.py               # CRUD + deactivate/activate + transfer-agenda + Verfügbarkeit
+    persons.py               # CRUD + deactivate/activate + transfer-agenda + Verfügbarkeit (perioden-fähig)
     committees.py            # CRUD + Mitgliedschaftsverwaltung
     absences.py              # Abwesenheits-CRUD
     rules.py                 # Sitzungsregel-Singleton (GET + PUT)
-    calculation.py           # POST /calculate
+    calculation.py           # POST /calculate + Sitzungsvorschlag-Fixierung
     jahresplan.py            # GET/POST /jahresplan, POST /jahresplan/copy
-    admin.py                 # 🆕 Web-Admin-UI: HTML-Server-Rendering für Stammdaten-Management
+    auth.py / users.py       # JWT-Login + Benutzerverwaltung (React-Admin)
+    obmann.py / person.py    # Obmann-Dashboard + Person-Portal
 tests/
   conftest.py                # In-Memory-SQLite-Fixture, TestClient mit DB-Override
   test_scheduler.py          # Engine-Unit-Tests (Masterprompt-Regeln)
@@ -95,13 +96,17 @@ tests/
 
 **Singleton-Regel:** `Sitzungsregel` existiert immer genau einmal. PUT ersetzt, GET legt bei Bedarf an.
 
-**Berechnungsregeln (Masterprompt):**
-- Nur Personen mit Rolle Obmann / Obmann-Stv. / Mitglied zählen
-- Verfügbarkeit in vollen Stunden; der gesamte Sitzungsblock muss abgedeckt sein
-- Erlaubte Starts: volle und halbe Stunden (07:00–19:30)
-- Beschlussfähigkeit: Obmann + X weitere (X je nach AusschussTyp)
+**Berechnungsregeln (beschlossen 2026-07, Details in docs/SCHEDULING.md):**
+- Nur Personen mit Rolle Obmann / Obmann-Stv. / Mitglied zählen (dedupliziert, nur aktive)
+- Verfügbarkeit in vollen Stunden; alle Stunden des Slots müssen abgedeckt sein
+- Slots (90 min): 07:00, 16:00–19:00 in Halbstundenschritten; Randslots 07:00–08:30
+  und 19:00–20:30 sind gültig (das 07:00-/19:00-Häkchen deckt den ganzen Block)
+- Beschlussfähigkeit: Obmann anwesend + mind. 50 % der Mitglieder (quorum_override möglich)
 - Priorität: 100 % → beschlussfähig → Obmann+Stv. → nur Obmann → nicht beschlussfähig
-- Freitagstermine haben niedrigere Priorität
+- Freitag eine Prioritätsstufe schlechter; freitag_modus="nein" schließt Freitag aus
+- start_datum wird automatisch auf den nächsten MONTAG normalisiert
+- Verfügbarkeiten sind perioden-fähig: perioden-spezifische Einträge überschreiben
+  die Standardverfügbarkeit (periode_id=NULL) vollständig
 
 ## API-Endpunkte
 
@@ -119,36 +124,21 @@ tests/
 | GET/POST | `/api/jahresplan` | Jahrespläne |
 | POST | `/api/jahresplan/copy` | Jahresplan kopieren |
 
-### Web-Admin-UI (`/admin/`)
-🆕 HTML-basierte Verwaltungsoberfläche für Stammdaten (Server-Rendered mit FastAPI + Bootstrap 5.3)
+### React-Admin-Panel (Frontend, `http://localhost:5173`)
+Die frühere HTML-Admin-UI (FastAPI-Server-Rendering) wurde durch das React-Frontend
+ersetzt und aus dem Code entfernt (2026-07).
 
 | Route | Funktion |
 |-------|----------|
-| `/admin/login` | Cookie-basierte Auth (password: `admin123` Demo) |
-| `/admin/` | Dashboard mit Navigationsmenu |
-| `/admin/personen` | Personen-CRUD mit Delete-Schutz |
-| `/admin/ausschuesse` | Ausschuesse-CRUD + Mitgliedschaftsverwaltung |
-| `/admin/ausschuesse/{id}/mitgliedschaften` | Personen zu Ausschuss hinzufügen/entfernen |
-| `/admin/abwesenheiten` | Abwesenheits-CRUD (Urlaub, Krankheit, etc.) |
-| `/admin/verfuegbarkeiten` | Wochentag × Stunde Verfügbarkeits-Matrix pro Person |
-| `/admin/jahrespläne` | Jahresplan-CRUD |
-| `/admin/sitzungsregeln` | Berechnung konfigurieren (Timeouts, Quorum, etc.) |
-| `/admin/logout` | Cookie löschen |
+| `/admin/login` | JWT-Login: `admin@ausschussplaner.local` / `admin123` (Demo) |
+| `/admin/panel` | Tabs: Benutzer, Personen, Perioden, Ausschüsse, Mitgliedschaften, Berechnung, Fixierte Termine, Abwesenheiten, Verfügbarkeiten, Sitzungsregeln |
+| Tab Berechnung | Sitzungsart-Combobox (Ausschüsse / Stadtratsitzung / Gemeinderatsitzung / Alle) — GR/STR werden getrennt von Standard-Ausschüssen berechnet |
+| Tab Verfügbarkeiten | Perioden-Combobox + Person-Combobox (inkl. „Alle" = Read-only-Übersichtsmatrix); lädt effektive Werte (Periode → Fallback Standard) |
+| `/person/*` | Person-Portal (eigene Verfügbarkeit/Abwesenheiten) |
 
-## Web-Admin-UI — Sicherheit & Validierung
-
-**Implementierte Sicherheits-Fixes** (Code-Review: 8/8 findings fixed):
-- ✅ **XSS-Prevention:** HTML-Escaping für alle Benutzerdaten (`html.escape()`)
-- ✅ **CSRF-Protection:** SameSite=Strict Cookie-Flag
-- ✅ **Exception-Handling:** Try/except für `ValueError` (int/Enum-Konversionen)
-- ✅ **Input-Validierung:** Enum-Konversionen, Redirect-URL-Validierung
-- ✅ **Fehler-Feedback:** Error-Pages statt stille Failures
-- ✅ **Datenbank-Constraints:** Delete-Schutz (Personen ohne Mitgliedschaften, Ausschuesse ohne Mitglieder)
-
-**Auth-Model:**
-- Cookie-basierte Session (kein SessionMiddleware nötig)
-- Plain-text Password Demo (`admin123` — nur für Entwicklung!)
-- **TODO (Prod):** Hashed passwords, signed/encrypted cookies, optional 2FA
+**Auth-Model:** JWT (24h) via `/api/auth/login`, Token in localStorage, Bearer-Header.
+Admin-User wird von `create_admin.py` bzw. `setup-dev.bat` sichergestellt.
+**TODO (Prod):** Refresh-Token, Passwort-Policy.
 
 ## Git Workflow
 
@@ -306,10 +296,29 @@ docker-compose down -v
 
 ---
 
+## Datenqualität & Utility-Skripte (Projekt-Root)
+
+**WICHTIG:** `realdata.json` ist die Quelle der Wahrheit für Verfügbarkeiten und
+Ausschuss-Rollen. Die alten Seed-Werte in `seed.py` (PERSONS_DATA) wichen davon ab
+(z. B. fehlten mehreren Stadträten 07:00/16:00) — das war eine Mitursache falscher
+Terminvorschläge. Ebenso saß eine geseedete "Test Person" mit Vormittags-
+Verfügbarkeiten im ersten Ausschuss und verhinderte dort jeden 100%-Termin
+(beides 2026-07 bereinigt).
+
+| Skript | Zweck |
+|--------|-------|
+| `create_admin.py` | Admin-User anlegen / Passwort zurücksetzen (läuft in setup-dev.bat) |
+| `migrate_verfuegbarkeit_periode.py` | DB-Migration periode_id (idempotent + reparaturfähig; läuft in start-dev.bat) |
+| `sync_verfuegbarkeiten.py [--fix]` | DB-Verfügbarkeiten mit realdata.json abgleichen/korrigieren |
+| `analyse_ausschuss.py <Name> [docx]` | Diagnose: Mitglieder, Verfügbarkeiten, Engine-Ergebnis je Ausschuss |
+| `delete_testperson.py` | Seed-'Test Person' vollständig entfernen (einmalig) |
+
 ## Bekannte offene Punkte
 
-- **Sitzungsvorschlag-Persistenz:** Ergebnisse der `/api/calculate` noch nicht gespeichert
-- **Admin-UI Templating:** HTML noch hardcoded in Routes (→ Jinja2 Template-Engine)
+- **Sitzungsvorschlag-Persistenz:** `zusammenfassung.gespeicherte_vorschlaege` nicht implementiert; Fixierung nur manuell via POST /api/calculate/results
+- **Fixierte Termine:** fließen NICHT in die Konfliktvermeidung der Neuberechnung ein (nur Anzeige im Frontend)
+- **Sitzungsregel:** `block_minuten` und `max_ausschuesse_pro_tag` werden von der Engine nicht ausgewertet (Slots hart 90 min)
+- **Konfliktprüfung:** pauschal (Zeitüberlappung), unabhängig von gemeinsamen Mitgliedern
 - **Email-Service (fastapi-mail):** Dependency noch nicht zuverlässig in Docker, Invitations nur im Code-Path
 - **Token-Expiry:** JWT nur 24h, Refresh-Token noch nicht implementiert
-- **Mobile-Responsive:** Admin-UI responsive, aber < 320px Screens nicht optimiert
+- **Alembic:** alembic.ini existiert, aber kein Migrations-Setup — Schema-Änderungen laufen als Root-Skripte

@@ -12,11 +12,13 @@ Kernidee:
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from enum import Enum
 
 from app.models.enums import AusschussTyp, Rolle, TerminStatus, Wochentag
+
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -37,7 +39,11 @@ class TimeSlot:
     required_availability_hours: list[str]
 
 
-# Alle möglichen Zeitslots (90 Min duration)
+# Alle möglichen Zeitslots (90 Min duration).
+# Fachliche Festlegung (2026-07): Die Randslots 07:00–08:30 und 19:00–20:30
+# sind gültige Sitzungszeiten. Das Verfügbarkeits-Häkchen "07:00" bzw. "19:00"
+# bedeutet "für den gesamten Früh-/Spätblock verfügbar" (die Matrix kennt
+# keine 08:00/20:00-Stunden).
 TIME_SLOTS = [
     TimeSlot("07:00", "08:30", ["07:00"]),
     TimeSlot("16:00", "17:30", ["16:00", "17:00"]),
@@ -132,11 +138,13 @@ class SlotEvaluation:
 
     @property
     def status(self) -> TerminStatus:
-        """Bestimme Status basierend auf Verfügbarkeit."""
+        """Bestimme Status basierend auf Verfügbarkeit (Spez SCHEDULING.md §6)."""
         if self.full_attendance:
             return TerminStatus.TOP
         if self.quorate:
             return TerminStatus.BESCHLUSSFAEHIG
+        if self.chair_present and self.deputy_chair_present:
+            return TerminStatus.ALTERNATIV
         if self.chair_present:
             return TerminStatus.OBMANN_DA
         return TerminStatus.NICHT_BESCHLUSSFAEHIG
@@ -200,17 +208,34 @@ def is_quorate(
 ) -> bool:
     """Prüfe, ob Ausschuss beschlussfähig ist.
 
-    Regel: Obmann MUSS anwesend sein + mind. 50% der Mitglieder.
+    Regeln:
+    - STANDARD: Obmann MUSS anwesend sein + mind. 50% der Mitglieder
+    - STADTRAT: ALLE Mitglieder müssen verfügbar sein
+    - GEMEINDERAT: ALLE Mitglieder oder mind. 50% (mit Bürgermeisterin)
+    - quorum_override (falls gesetzt): Obmann + mind. quorum_override Anwesende
+      insgesamt (ersetzt die 50%-Regel, nicht die Obmann-Pflicht)
     """
     if not members:
         return False
 
-    # Obmann MUSS anwesend sein
+    # Bürgermeisterin (Rolle: OBMANN) ist immer erforderlich
     chair = next((m for m in members if m.rolle == Rolle.OBMANN), None)
     if not chair or chair.person_id not in present_ids:
         return False
 
-    # Mind. 50% aller Mitglieder (einschließlich Obmann)
+    # Spezielle Regeln nach Ausschusstyp
+    if committee.typ == AusschussTyp.STADTRAT:
+        # Alle Stadträte müssen verfügbar sein
+        return len(present_ids) == len(members)
+
+    if committee.typ == AusschussTyp.GEMEINDERAT:
+        # Alle 33 Personen ODER mind. 50% + Bürgermeisterin
+        return len(present_ids) == len(members) or len(present_ids) >= (len(members) / 2)
+
+    # STANDARD: konfiguriertes Quorum hat Vorrang, sonst Obmann + mind. 50%
+    if committee.quorum_override is not None:
+        return len(present_ids) >= committee.quorum_override
+
     required = len(members) / 2
     return len(present_ids) >= required
 
@@ -219,6 +244,7 @@ def evaluate_committee_slots(
     committee: CommitteeInput,
     weeks: int = 2,
     start_date: date | None = None,
+    freitag_modus: str = "reserve",
 ) -> list[SlotEvaluation]:
     """Evaluiere ALLE (Wochentag, Zeitslot, Woche) Kombinationen.
 
@@ -226,20 +252,33 @@ def evaluate_committee_slots(
         committee: CommitteeInput mit Mitgliedern
         weeks: Anzahl der Planungswochen (1–2)
         start_date: Montag der ersten Planungswoche. Falls gegeben, nutze für Abwesenheits-Checks.
+        freitag_modus: "nein" = Freitag komplett ausschließen,
+                       "reserve" = Freitag eine Prioritätsstufe schlechter (Default),
+                       "normal" = Freitag gleichrangig (Abschlag bleibt als Tiebreak).
 
     Returns:
         Sortierte Liste von SlotEvaluation
     """
+    weekdays = WEEKDAYS if freitag_modus != "nein" else [d for d in WEEKDAYS if d != Wochentag.FR]
 
-    # Filtere nur echte Mitglieder (mit Rolle)
-    real_members = [m for m in committee.members if m.rolle in (Rolle.OBMANN, Rolle.OBMANN_STELLVERTRETER, Rolle.MITGLIED)]
+    # Filtere nur echte Mitglieder (mit Rolle) und dedupliziere nach person_id
+    # (dieselbe Person darf nicht doppelt fürs Quorum zählen; Masterprompt §1)
+    real_members: list[MemberInput] = []
+    seen_ids: set[int] = set()
+    for m in committee.members:
+        if m.rolle not in (Rolle.OBMANN, Rolle.OBMANN_STELLVERTRETER, Rolle.MITGLIED):
+            continue
+        if m.person_id in seen_ids:
+            continue
+        seen_ids.add(m.person_id)
+        real_members.append(m)
 
     results: list[SlotEvaluation] = []
 
     # Für jede Woche
     for week in range(1, weeks + 1):
         # Für jeden Wochentag
-        for weekday in WEEKDAYS:
+        for weekday in weekdays:
             # Berechne Datum dieser Kombination (falls start_date gegeben)
             meeting_date = None
             if start_date is not None:
@@ -263,8 +302,10 @@ def evaluate_committee_slots(
                 # Bestimme Obmann/Stellvertreter
                 chair = next((m for m in real_members if m.rolle == Rolle.OBMANN), None)
                 deputy = next((m for m in real_members if m.rolle == Rolle.OBMANN_STELLVERTRETER), None)
-                chair_present = chair and chair.person_id in present_ids
-                deputy_present = deputy and deputy.person_id in present_ids
+                # "is not None and" statt "and": liefert immer echtes bool
+                # (None würde Pydantic-Validierung von obmann_da/stv_da brechen)
+                chair_present = chair is not None and chair.person_id in present_ids
+                deputy_present = deputy is not None and deputy.person_id in present_ids
 
                 # Bestimme Quorum
                 quorate = is_quorate(committee, real_members, present_ids)
@@ -294,23 +335,45 @@ def evaluate_committee_slots(
     return sort_evaluations(results)
 
 
-def sort_evaluations(results: list[SlotEvaluation]) -> list[SlotEvaluation]:
-    """Sortiere nach Priority: fullAttendance > chair > quorate > attendance."""
-    return sorted(
-        results,
-        key=lambda e: (
-            # Absteigend (höher ist besser)
-            -int(e.full_attendance),
-            -int(e.chair_present),
-            -int(e.deputy_chair_present or False),
-            -int(e.quorate),
-            -e.attendance_count,
-            -e.attendance_rate,
-            # Aufsteigend (kleiner ist besser)
-            WEEKDAY_SCORE[e.weekday],
-            TIME_SCORE.get(e.start_time, 99),
-        ),
+def status_rank(e: SlotEvaluation) -> int:
+    """Prioritätsstufe laut Spez (SCHEDULING.md §6) — niedriger ist besser.
+
+    top(0) > beschlussfähig(2) > Obmann+Stv.(4) > nur Obmann(6) > Rest(8).
+    Freitagstermine sind je eine Stufe schlechter (+1, freitag_modus 'reserve').
+    """
+    if e.full_attendance:
+        rank = 0
+    elif e.quorate:
+        rank = 2
+    elif e.chair_present and e.deputy_chair_present:
+        rank = 4
+    elif e.chair_present:
+        rank = 6
+    else:
+        rank = 8
+    if e.weekday == Wochentag.FR:
+        rank += 1
+    return rank
+
+
+def priority_key(e: SlotEvaluation) -> tuple:
+    """Zentrale Prioritätsfunktion — überall identisch verwenden.
+
+    Reihenfolge: Statusstufe (inkl. Freitagsabschlag) → Anwesenheitszahl →
+    Anwesenheitsquote → früher Wochentag → bevorzugte Uhrzeit.
+    """
+    return (
+        status_rank(e),
+        -e.attendance_count,
+        -e.attendance_rate,
+        WEEKDAY_SCORE[e.weekday],
+        TIME_SCORE.get(e.start_time, 99),
     )
+
+
+def sort_evaluations(results: list[SlotEvaluation]) -> list[SlotEvaluation]:
+    """Sortiere nach Spez-Priorität: top > beschlussfähig > Obmann+Stv. > Obmann."""
+    return sorted(results, key=priority_key)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -324,56 +387,159 @@ class GlobalSchedule:
     conflicts: list[str] = field(default_factory=list)
 
 
+def _times_overlap(start1: str, end1: str, start2: str, end2: str) -> bool:
+    """Prüfe ob zwei Zeitintervalle sich überschneiden.
+
+    Args:
+        start1, end1: "HH:MM" format
+        start2, end2: "HH:MM" format
+
+    Returns:
+        True wenn Überschneidung existiert
+    """
+    def time_to_minutes(time_str: str) -> int:
+        h, m = map(int, time_str.split(":"))
+        return h * 60 + m
+
+    start1_min = time_to_minutes(start1)
+    end1_min = time_to_minutes(end1)
+    start2_min = time_to_minutes(start2)
+    end2_min = time_to_minutes(end2)
+
+    # Zwei Intervalle überschneiden sich, wenn:
+    # start1 < end2 UND start2 < end1
+    return start1_min < end2_min and start2_min < end1_min
+
+
+def _backtrack_schedule(
+    committees: list[tuple],
+    all_evaluations: dict[int, list[SlotEvaluation]],
+    assigned: dict[int, SlotEvaluation],
+    occupied: list[SlotEvaluation],
+    index: int,
+) -> bool:
+    """Recursive backtracking to find conflict-free scheduling."""
+    if index == len(committees):
+        week_dist: dict[int, int] = {}
+        for e in occupied:
+            week_dist[e.week] = week_dist.get(e.week, 0) + 1
+        logger.debug("Backtracking erfolgreich – Wochenverteilung: %s", week_dist)
+        return True  # All assigned successfully
+
+    committee_id, evaluations = committees[index]
+
+    # Count week load to balance across weeks
+    week_counts: dict[int, int] = {}
+    for occ in occupied:
+        week_counts[occ.week] = week_counts.get(occ.week, 0) + 1
+
+    # Einheitliche Priorität (Spez §6) + Wochen-Balance als Zwischenkriterium:
+    # Statusstufe zuerst, dann weniger belastete Woche, dann restliche Priorität.
+    sorted_options = sorted(
+        evaluations,
+        key=lambda e: (
+            status_rank(e),
+            week_counts.get(e.week, 0),  # Prefer weeks with fewer committees
+            -e.attendance_count,
+            -e.attendance_rate,
+            WEEKDAY_SCORE[e.weekday],
+            TIME_SCORE.get(e.start_time, 99),
+        ),
+    )
+
+    for option in sorted_options:
+        # Check if this option conflicts
+        has_conflict = False
+        for occ in occupied:
+            if (
+                occ.week == option.week
+                and occ.weekday == option.weekday
+                and _times_overlap(occ.start_time, occ.end_time, option.start_time, option.end_time)
+            ):
+                has_conflict = True
+                break
+
+        if not has_conflict:
+            # Try this option
+            assigned[committee_id] = option
+            occupied.append(option)
+
+            if _backtrack_schedule(committees, all_evaluations, assigned, occupied, index + 1):
+                return True
+
+            # Backtrack
+            occupied.pop()
+            del assigned[committee_id]
+
+    return False
+
+
 def global_schedule_committees(
     all_evaluations: dict[int, list[SlotEvaluation]],
 ) -> GlobalSchedule:
-    """Globale Planung mit Week-Load-Balancing.
+    """Backtracking Scheduling - finds conflict-free solution or best approximation.
 
-    Algorithmus:
-    1. Sortiere Ausschüsse nach Constraint-Komplexität (weniger Optionen first)
-    2. Für jeden Ausschuss: Wähle beste verfügbare Option
-       - PRIORITÄT: Woche mit weniger Ausschüssen (Load-Balance)
-       - Keine Konflikte (week, weekday, start_time)
-    3. Markiere Slot als belegt
+    Uses recursive backtracking to explore the search space,
+    prioritizing committees with fewer options and better quality.
     """
-    assigned: dict[int, SlotEvaluation] = {}
-    occupied: set[tuple[int, Wochentag, str]] = set()  # (week, weekday, start_time)
-    week_counts = {}  # week -> count
-    conflicts = []
+    # Ausschüsse ohne Optionen können nie zugewiesen werden — überspringen,
+    # sonst schlägt das Backtracking für ALLE fehl (und der Greedy-Fallback
+    # crasht mit IndexError).
+    skipped = [cid for cid, evals in all_evaluations.items() if not evals]
+    if skipped:
+        logger.warning("Ausschüsse ohne Terminoptionen (übersprungen): %s", skipped)
 
-    # Sortiere Ausschüsse nach Anzahl verfügbarer Optionen (ascending = constraints first)
+    # Sort by complexity (fewer options = harder to place = try first)
     sorted_committees = sorted(
-        all_evaluations.items(),
+        ((cid, evals) for cid, evals in all_evaluations.items() if evals),
         key=lambda x: len(x[1]),
     )
 
-    for committee_id, evaluations in sorted_committees:
-        # Sortiere Evaluationen nach: Week-Load (ascending), dann Quality
-        # Das bevorzugt leere Wochen vor vollen
-        sorted_evals = sorted(
-            evaluations,
-            key=lambda e: (
-                week_counts.get(e.week, 0),  # Woche mit weniger Ausschüssen first
-                -int(e.full_attendance),  # Dann beste Quality
-                -int(e.chair_present),
-                -int(e.quorate),
-            ),
-        )
+    assigned: dict[int, SlotEvaluation] = {}
+    occupied: list[SlotEvaluation] = []
 
-        # Finde erste nicht-konfliktfreie Option
-        assigned_slot = None
-        for evaluation in sorted_evals:
-            slot_key = (evaluation.week, evaluation.weekday, evaluation.start_time)
-            if slot_key not in occupied:
-                assigned_slot = evaluation
-                occupied.add(slot_key)
-                week_counts[evaluation.week] = week_counts.get(evaluation.week, 0) + 1
+    # Try backtracking
+    success = _backtrack_schedule(sorted_committees, all_evaluations, assigned, occupied, 0)
+    logger.info(
+        "Backtracking: %s – zugewiesen %d/%d Ausschüsse",
+        "SUCCESS" if success else "FAILED", len(assigned), len(sorted_committees),
+    )
+
+    if success:
+        # Success - all assigned without conflicts
+        conflicts = [f"Ausschuss {cid}: keine Terminoptionen" for cid in skipped]
+        return GlobalSchedule(assigned=assigned, conflicts=conflicts)
+
+    # If backtracking fails, fall back to greedy (best-effort, may keep conflicts)
+    logger.warning("Backtracking fehlgeschlagen – Greedy-Fallback")
+    assigned = {}
+    occupied = []
+    conflicts = [f"Ausschuss {cid}: keine Terminoptionen" for cid in skipped]
+
+    for committee_id, evaluations in sorted_committees:
+        sorted_options = sorted(evaluations, key=priority_key)
+
+        placed = False
+        for option in sorted_options:
+            has_conflict = any(
+                occ.week == option.week and occ.weekday == option.weekday and
+                _times_overlap(occ.start_time, occ.end_time, option.start_time, option.end_time)
+                for occ in occupied
+            )
+
+            if not has_conflict:
+                assigned[committee_id] = option
+                occupied.append(option)
+                placed = True
                 break
 
-        if assigned_slot:
-            assigned[committee_id] = assigned_slot
-        else:
-            conflicts.append(f"Ausschuss {committee_id}: Kein konfliktfreier Slot")
+        if not placed:
+            # Force assign best option und Konflikt ausweisen
+            assigned[committee_id] = sorted_options[0]
+            occupied.append(sorted_options[0])
+            conflicts.append(
+                f"Ausschuss {committee_id}: Terminüberschneidung nicht auflösbar"
+            )
 
     return GlobalSchedule(assigned=assigned, conflicts=conflicts)
 
@@ -387,6 +553,7 @@ def calculate_committee_dates(
     weeks: int = 2,
     max_alternatives: int = 10,
     start_date: date | None = None,
+    freitag_modus: str = "reserve",
 ) -> dict[int, list[SlotEvaluation]]:
     """Berechne beste Termine für alle Ausschüsse.
 
@@ -395,13 +562,14 @@ def calculate_committee_dates(
         weeks: Anzahl der Planungswochen
         max_alternatives: Max. Anzahl Vorschläge pro Ausschuss
         start_date: Montag der ersten Planungswoche (optional, für Abwesenheits-Checks)
+        freitag_modus: siehe evaluate_committee_slots
 
     Returns:
         dict[committee_id] -> list[SlotEvaluation] (top N)
     """
     result = {}
     for committee in committees:
-        evaluations = evaluate_committee_slots(committee, weeks, start_date)
+        evaluations = evaluate_committee_slots(committee, weeks, start_date, freitag_modus)
         # Gib Top N Termine pro Ausschuss
         result[committee.committee_id] = evaluations[:max_alternatives]
     return result

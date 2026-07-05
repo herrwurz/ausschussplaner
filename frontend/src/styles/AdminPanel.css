@@ -236,7 +236,10 @@
 
 .form-group input,
 .form-group select,
-.form-group textarea {
+.form-group textarea,
+.admin-form input,
+.admin-form select,
+.admin-form textarea {
   width: 100%;
   padding: var(--padding-sm) var(--padding-md);
   border: 1px solid var(--border-primary);
@@ -249,13 +252,31 @@
   transition: all var(--transition-normal);
 }
 
-.form-group input::placeholder {
+.admin-form label {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+  margin-top: var(--margin-md);
+}
+
+.admin-form > div {
+  margin-bottom: var(--margin-md);
+}
+
+.form-group input::placeholder,
+.admin-form input::placeholder,
+.admin-form textarea::placeholder {
   color: var(--text-tertiary);
 }
 
 .form-group input:focus,
 .form-group select:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.admin-form input:focus,
+.admin-form select:focus,
+.admin-form textarea:focus {
   outline: none;
   border-color: var(--color-primary-600);
   box-shadow: var(--shadow-focus);
@@ -513,5 +534,84 @@
   .btn {
     padding: var(--space-2) var(--space-4);
     font-size: var(--font-size-sm);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+   TABLE CONTROLS (Filter & Sort)
+   ────────────────────────────────────────────────────────── */
+
+.table-controls {
+  display: flex;
+  gap: var(--gap-md);
+  margin-bottom: var(--margin-lg);
+  padding: var(--padding-md);
+  background: white;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-xs);
+  flex-wrap: wrap;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  flex: 1;
+  min-width: 200px;
+}
+
+.control-group label {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+}
+
+.control-group select {
+  padding: var(--padding-sm) var(--padding-md);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-base);
+  background: white;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.control-group select:focus {
+  outline: none;
+  border-color: var(--color-primary-600);
+  box-shadow: var(--shadow-focus);
+}
+
+/* ──────────────────────────────────────────────────────────
+   ABSENCES CONTAINER
+   ────────────────────────────────────────────────────────── */
+
+.absences-container {
+  /* inherits from admin-content */
+}
+
+.absences-container .form-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 768px) {
+  .table-controls {
+    flex-direction: column;
+  }
+
+  .control-group {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .control-group select {
+    flex: 1;
+  }
+
+  .absences-container .form-grid {
+    grid-template-columns: 1fr;
   }
 }

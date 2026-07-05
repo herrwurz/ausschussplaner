@@ -24,7 +24,6 @@ def _to_out(a: Ausschuss) -> AusschussOut:
         typ=a.typ,
         turnus=a.turnus,
         aktiv=a.aktiv,
-        quorum_override=a.quorum_override,
         mitglieder=[
             MitgliedOut(person_id=ms.person_id, rolle=ms.rolle, name=ms.person.name)
             for ms in a.mitgliedschaften
@@ -53,7 +52,6 @@ def create_committee(payload: AusschussCreate, periode_id: int | None = None, db
         turnus=payload.turnus,
         aktiv=payload.aktiv,
         periode_id=periode_id,
-        quorum_override=payload.quorum_override,
     )
     db.add(a)
     db.flush()
@@ -112,7 +110,6 @@ def copy_committee_to_period(committee_id: int, target_periode_id: int, db: Sess
         turnus=str(periode.jahr),  # turnus = Jahr der Periode
         aktiv=True,
         periode_id=target_periode_id,
-        quorum_override=source.quorum_override,
     )
     db.add(new_committee)
     db.commit()

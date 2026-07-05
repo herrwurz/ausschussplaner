@@ -9,6 +9,8 @@ import MitgliedschaftenManagement from './MitgliedschaftenManagement'
 import Terminberechnung from './Terminberechnung'
 import FixierteTermine from './FixierteTermine'
 import Sitzungsregeln from './Sitzungsregeln'
+import Abwesenheiten from './Abwesenheiten'
+import Verfuegbarkeiten from './Verfuegbarkeiten'
 
 export default function AdminPanel() {
   const navigate = useNavigate()
@@ -29,6 +31,10 @@ export default function AdminPanel() {
       setActiveTab('termine-berechnung')
     } else if (location.pathname.includes('fixierte-termine')) {
       setActiveTab('fixierte-termine')
+    } else if (location.pathname.includes('abwesenheiten')) {
+      setActiveTab('abwesenheiten')
+    } else if (location.pathname.includes('verfuegbarkeiten')) {
+      setActiveTab('verfuegbarkeiten')
     } else {
       setActiveTab('personen')
     }
@@ -109,6 +115,18 @@ export default function AdminPanel() {
         >
           📅 Fixierte Termine
         </button>
+        <button
+          className={`tab-btn ${activeTab === 'abwesenheiten' ? 'active' : ''}`}
+          onClick={() => setActiveTab('abwesenheiten')}
+        >
+          🏖️ Abwesenheiten
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'verfuegbarkeiten' ? 'active' : ''}`}
+          onClick={() => setActiveTab('verfuegbarkeiten')}
+        >
+          🕐 Verfügbarkeiten
+        </button>
         {isSuperAdmin && (
           <button
             className={`tab-btn ${activeTab === 'sitzungsregeln' ? 'active' : ''}`}
@@ -127,6 +145,8 @@ export default function AdminPanel() {
         {activeTab === 'mitgliedschaften' && <MitgliedschaftenManagement />}
         {activeTab === 'termine-berechnung' && <Terminberechnung />}
         {activeTab === 'fixierte-termine' && <FixierteTermine />}
+        {activeTab === 'abwesenheiten' && <Abwesenheiten />}
+        {activeTab === 'verfuegbarkeiten' && <Verfuegbarkeiten />}
         {isSuperAdmin && activeTab === 'sitzungsregeln' && <Sitzungsregeln />}
       </div>
     </div>

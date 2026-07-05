@@ -105,24 +105,32 @@ class Person(Base):
 
 
 class Verfuegbarkeit(Base):
-    """Standardverfügbarkeit: Person ist an Wochentag zur Stunde verfügbar.
+    """Verfügbarkeit: Person ist an Wochentag zur Stunde verfügbar.
 
     Stunden werden als volle Stunde gespeichert (z. B. 7, 16, 17, 18, 19).
     Ein Eintrag bedeutet 'verfügbar'; fehlt der Eintrag, gilt 'nicht verfügbar'.
+
+    periode_id = NULL: Standardverfügbarkeit (gilt für alle Perioden).
+    periode_id gesetzt: gilt nur für diese Periode und ÜBERSCHREIBT für diese
+    Person die Standardverfügbarkeit komplett (kein Mischen).
     """
 
     __tablename__ = "verfuegbarkeit"
     __table_args__ = (
-        UniqueConstraint("person_id", "wochentag", "stunde", name="uq_verfuegbarkeit"),
+        UniqueConstraint("person_id", "periode_id", "wochentag", "stunde", name="uq_verfuegbarkeit"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("person.id", ondelete="CASCADE"))
+    periode_id: Mapped[int | None] = mapped_column(
+        ForeignKey("gemeinderatsperiode.id", ondelete="CASCADE"), nullable=True
+    )
     wochentag: Mapped[Wochentag] = mapped_column(Enum(Wochentag))
     stunde: Mapped[float] = mapped_column(Float)  # 7, 7.5, 16, 16.5, ..., 19
     verfuegbar: Mapped[bool] = mapped_column(Boolean, default=True)
 
     person: Mapped[Person] = relationship(back_populates="verfuegbarkeiten")
+    periode: Mapped[Gemeinderatsperiode | None] = relationship()
 
 
 class Ausschuss(Base):
@@ -193,6 +201,7 @@ class Sitzungsregel(Base):
     council_minuten: Mapped[int] = mapped_column(Integer, default=240)
     planungswochen: Mapped[int] = mapped_column(Integer, default=2)
     freitag_modus: Mapped[str] = mapped_column(String(20), default="reserve")
+    max_ausschuesse_pro_tag: Mapped[int] = mapped_column(Integer, default=2)
 
 
 class Jahresplan(Base):
