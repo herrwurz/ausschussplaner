@@ -162,3 +162,45 @@ def test_super_admin_sieht_alle_ausschuesse(client, super_admin, ausschuesse):
     r = client.get("/api/obmann/ausschuesse", headers=headers)
     assert r.status_code == 200
     assert len(r.json()) == 2
+
+
+# ------------------------------------------------------ Admin-Bootstrap
+
+def test_ensure_admin_entfernt_demo_admin(db_session, monkeypatch):
+    """Demo-Admin wird gelöscht, sobald ein richtiger Admin konfiguriert ist."""
+    from app import main
+    from app.models.models import User
+
+    AuthService.create_user(
+        db_session, email=main.DEMO_ADMIN_EMAIL, password="admin123",
+        vorname="System", nachname="Administrator",
+        rolle=BenutzerRolle.SUPER_ADMIN,
+    )
+
+    monkeypatch.setattr(main.settings, "admin_email", "echt@gemeinde.at")
+    monkeypatch.setattr(main.settings, "admin_password", "sicheres-passwort")
+    main.ensure_admin_user(db_session)
+
+    assert db_session.query(User).filter(
+        User.email == main.DEMO_ADMIN_EMAIL).first() is None
+    neuer = db_session.query(User).filter(User.email == "echt@gemeinde.at").first()
+    assert neuer is not None
+    assert neuer.rolle == BenutzerRolle.SUPER_ADMIN
+
+
+def test_ensure_admin_ohne_passwort_tut_nichts(db_session, monkeypatch):
+    """Ohne ADMIN_PASSWORD bleibt alles unangetastet (lokale Dev-Umgebung)."""
+    from app import main
+    from app.models.models import User
+
+    AuthService.create_user(
+        db_session, email=main.DEMO_ADMIN_EMAIL, password="admin123",
+        vorname="System", nachname="Administrator",
+        rolle=BenutzerRolle.SUPER_ADMIN,
+    )
+
+    monkeypatch.setattr(main.settings, "admin_password", None)
+    main.ensure_admin_user(db_session)
+
+    assert db_session.query(User).filter(
+        User.email == main.DEMO_ADMIN_EMAIL).first() is not None
