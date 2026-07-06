@@ -1,46 +1,43 @@
 """Obmann-Dashboard Routes - Ausschuss-Management für Obmänner."""
-from fastapi import APIRouter, Depends, HTTPException, status, Header
-from sqlalchemy.orm import Session
-from sqlalchemy import select
+import json
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
 from app.db.base import get_db
-from app.models.models import User, Ausschuss, Mitgliedschaft, Sitzungsvorschlag
-from app.models.enums import Rolle
-from app.services.calculation_service import run_calculation
+from app.models.enums import BenutzerRolle
+from app.models.models import Ausschuss, Mitgliedschaft, User
 from app.schemas.schemas import BerechnungRequest
-from app.services.auth_service import TokenService
+from app.services.calculation_service import run_calculation
 
 router = APIRouter(prefix="/obmann", tags=["Obmann"])
 
 
-def get_current_obmann(
-    db: Session = Depends(get_db),
-    authorization: str = Header(None),
-) -> User:
-    """Hole aktuellen Obmann aus Authorization Header."""
-    if not authorization or not authorization.startswith("Bearer "):
+def get_current_obmann(user: User = Depends(get_current_user)) -> User:
+    """Erlaube nur Obmänner und Super-Admins (403 sonst)."""
+    if user.rolle not in (BenutzerRolle.OBMANN, BenutzerRolle.SUPER_ADMIN):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nicht authentifiziert",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kein Zugriff auf das Obmann-Dashboard",
         )
-
-    token = authorization.split(" ")[1]
-    payload = TokenService.decode_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ungültiger Token",
-        )
-
-    user_id = int(payload["sub"])
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Benutzer nicht gefunden",
-        )
-
     return user
+
+
+def erlaubte_ausschuss_ids(obmann: User, db: Session) -> set[int]:
+    """IDs der Ausschüsse, die der Benutzer verwalten darf.
+
+    SUPER_ADMIN darf alle aktiven Ausschüsse, ein Obmann nur die ihm in
+    `User.obmann_ausschuss_ids` (JSON-Liste) zugewiesenen.
+    """
+    if obmann.rolle == BenutzerRolle.SUPER_ADMIN:
+        rows = db.query(Ausschuss.id).filter(Ausschuss.aktiv == True).all()  # noqa: E712
+        return {r[0] for r in rows}
+    try:
+        ids = json.loads(obmann.obmann_ausschuss_ids or "[]")
+        return {int(i) for i in ids}
+    except (TypeError, ValueError):
+        return set()
 
 
 @router.get("/ausschuesse")
@@ -49,10 +46,12 @@ def get_obmann_ausschuesse(
     db: Session = Depends(get_db),
 ):
     """Hole alle Ausschüsse, bei denen der aktuelle Benutzer Obmann ist."""
-
-    # Für jetzt: Gebe alle aktiven Ausschüsse zurück
-    # TODO: Implementiere richtige Obmann-Überprüfung über Person ↔ Ausschuss-Mitgliedschaften
-    ausschuesse = db.query(Ausschuss).filter(Ausschuss.aktiv == True).all()
+    ids = erlaubte_ausschuss_ids(obmann, db)
+    ausschuesse = (
+        db.query(Ausschuss)
+        .filter(Ausschuss.aktiv == True, Ausschuss.id.in_(ids))  # noqa: E712
+        .all()
+    )
 
     return [
         {
@@ -73,9 +72,7 @@ def get_obmann_personen(
     """Hole alle Personen aus den Ausschüssen des Obmans."""
     from app.models.models import Person
 
-    # Hole alle Ausschüsse des Obmans
-    ausschuesse = db.query(Ausschuss).filter(Ausschuss.aktiv == True).all()
-    ausschuss_ids = [a.id for a in ausschuesse]
+    ausschuss_ids = erlaubte_ausschuss_ids(obmann, db)
 
     # Hole alle Personen, die in diesen Ausschüssen Mitglied sind
     personen = (
@@ -113,6 +110,22 @@ def get_obmann_person_verfuegbarkeit(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Person nicht gefunden",
+        )
+
+    # Nur Personen aus den eigenen Ausschüssen des Obmans
+    ids = erlaubte_ausschuss_ids(obmann, db)
+    ist_mitglied = (
+        db.query(Mitgliedschaft)
+        .filter(
+            Mitgliedschaft.person_id == person_id,
+            Mitgliedschaft.ausschuss_id.in_(ids),
+        )
+        .first()
+    )
+    if not ist_mitglied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Person gehört zu keinem Ausschuss dieses Obmans",
         )
 
     verfuegbarkeiten = (
@@ -154,7 +167,11 @@ def calculate_ausschuss_termine(
             detail="Ausschuss nicht gefunden",
         )
 
-    # TODO: Überprüfe, ob der aktuelle Benutzer Obmann dieses Ausschusses ist
+    if ausschuss_id not in erlaubte_ausschuss_ids(obmann, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kein Obmann dieses Ausschusses",
+        )
 
     try:
         # Erstelle BerechnungRequest für den Ausschuss
@@ -181,4 +198,4 @@ def calculate_ausschuss_termine(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Berechnung fehlgeschlagen: {str(e)}",
-        )
+        ) from e
