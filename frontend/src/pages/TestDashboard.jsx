@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 
-const API = 'http://localhost:8000'
+const API = ''
 const PARTEIEN = ['ÖVP', 'SPÖ', 'Grüne', 'FPÖ', 'NEOS', 'KPÖ']
 
 export default function TestDashboard() {

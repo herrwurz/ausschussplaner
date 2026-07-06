@@ -2,16 +2,62 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import absences, calculation, committees, jahresplan, persons, rules, person, perioden, auth, users, obmann
+from app.api.routes import (
+    absences,
+    auth,
+    calculation,
+    committees,
+    jahresplan,
+    obmann,
+    perioden,
+    person,
+    persons,
+    rules,
+    users,
+)
 from app.core.config import get_settings
-from app.db.base import Base, engine, SessionLocal
+from app.db.base import Base, SessionLocal, engine
 from app.db.seed import seed_data
 
 settings = get_settings()
+
+# Production-Build des React-Frontends (wird im Docker-Image mitgeliefert)
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+def ensure_admin_user(db) -> None:
+    """Legt den Admin-User an bzw. setzt sein Passwort (nur wenn ADMIN_PASSWORD gesetzt).
+
+    Ermöglicht das Erst-Setup in Deployments ohne Shell-Zugriff (z. B. Coolify).
+    """
+    if not settings.admin_password:
+        return
+    from app.models.enums import BenutzerRolle
+    from app.models.models import User
+    from app.services.auth_service import PasswordService
+
+    user = db.query(User).filter(User.email == settings.admin_email).first()
+    if user:
+        user.password_hash = PasswordService.hash_password(settings.admin_password)
+        user.aktiv = True
+    else:
+        db.add(User(
+            email=settings.admin_email,
+            password_hash=PasswordService.hash_password(settings.admin_password),
+            vorname="System",
+            nachname="Administrator",
+            rolle=BenutzerRolle.SUPER_ADMIN,
+            aktiv=True,
+        ))
+    db.commit()
+    print(f"✅ Admin-User sichergestellt: {settings.admin_email}")
 
 
 @asynccontextmanager
@@ -26,6 +72,7 @@ async def lifespan(app: FastAPI):
         if db.query(Person).count() == 0:
             seed_data(db)
             print("✅ Seed-Daten geladen")
+        ensure_admin_user(db)
     finally:
         db.close()
 
@@ -69,10 +116,27 @@ def health():
     return {"status": "ok", "version": settings.app_version}
 
 
-@app.get("/", tags=["System"])
-def root():
-    return {
-        "name": settings.app_name,
-        "docs": "/docs",
-        "health": "/health",
-    }
+if FRONTEND_DIST.is_dir():
+    # Production: gebautes React-Frontend same-origin ausliefern.
+    # API-Routen, /docs und /health sind vorher registriert und haben Vorrang;
+    # alle übrigen Pfade beantwortet die SPA (React Router übernimmt clientseitig).
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        if (
+            full_path
+            and candidate.is_file()
+            and candidate.is_relative_to(FRONTEND_DIST.resolve())
+        ):
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
+else:
+    @app.get("/", tags=["System"])
+    def root():
+        return {
+            "name": settings.app_name,
+            "docs": "/docs",
+            "health": "/health",
+        }
