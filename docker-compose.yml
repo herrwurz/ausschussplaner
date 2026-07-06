@@ -6,6 +6,13 @@ services:
     environment:
       - DATABASE_URL=sqlite:////data/ausschussplaner.db
       - DEBUG=false
+      # Pflicht in Produktion: zufälliger Schlüssel, sonst sind JWT-Tokens fälschbar
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY muss gesetzt sein (z.B. via Coolify Env)}
+      # Optional: Admin-User beim Start anlegen/zurücksetzen
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@ausschussplaner.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Optional: zusätzliche CORS-Origins (same-origin braucht keine)
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:5173"]}
     volumes:
       - ./data:/data
     restart: unless-stopped

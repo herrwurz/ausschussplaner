@@ -8,6 +8,7 @@ __pycache__/
 .env.local
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 .coverage
 ausschussplaner.egg-info/
 dist/

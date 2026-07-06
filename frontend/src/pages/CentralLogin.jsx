@@ -21,7 +21,7 @@ export default function CentralLogin() {
         localStorage.setItem('userType', 'admin')
         localStorage.setItem('adminId', '1')
         localStorage.setItem('username', 'admin')
-        window.location.href = 'http://localhost:8000/admin/'
+        window.location.href = '/admin/login'
         return
       }
 

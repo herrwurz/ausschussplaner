@@ -1,7 +1,8 @@
 import axios from 'axios'
 
+// Relativ: Dev nutzt den Vite-Proxy (vite.config.js), Prod läuft same-origin
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',
   },

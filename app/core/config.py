@@ -19,11 +19,17 @@ class Settings(BaseSettings):
     # Datenbank
     database_url: str = "sqlite:///./ausschussplaner.db"
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173", "*"]
+    # CORS — in Produktion läuft das Frontend same-origin, daher reichen
+    # die Dev-Origins; via CORS_ORIGINS-Env überschreibbar
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     # JWT Secret (für Person-Portal)
     secret_key: str | None = None
+
+    # Admin-Bootstrap: wenn gesetzt, wird der Admin-User beim Start
+    # angelegt bzw. sein Passwort gesetzt (für Deployment ohne Shell-Zugriff)
+    admin_email: str = "admin@ausschussplaner.local"
+    admin_password: str | None = None
 
     # Email (SMTP für Einladungen)
     smtp_server: str = "smtp.gmail.com"
