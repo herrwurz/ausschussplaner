@@ -3,9 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, require_super_admin
 from app.db.base import get_db
-from app.services.auth_service import AuthService, PasswordService, TokenService
 from app.models.enums import BenutzerRolle
+from app.models.models import User
+from app.services.auth_service import AuthService, TokenService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -68,20 +70,8 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user(token: str = None, db: Session = Depends(get_db)):
+def get_me(user: User = Depends(get_current_user)):
     """Get aktiven Benutzer-Info (benötigt Auth-Header)."""
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-
-    payload = TokenService.decode_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-
-    user_id = int(payload["sub"])
-    user = AuthService.get_user_by_id(db, user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-
     return {
         "id": user.id,
         "email": user.email,
@@ -99,10 +89,9 @@ def register_user(
     vorname: str,
     nachname: str,
     db: Session = Depends(get_db),
+    _admin: User = Depends(require_super_admin),
 ):
     """Registriere neuen Benutzer (nur SUPER_ADMIN kann das tun!)."""
-    # TODO: Prüfe ob aktueller User SUPER_ADMIN ist
-
     existing = AuthService.get_user_by_email(db, email)
     if existing:
         raise HTTPException(

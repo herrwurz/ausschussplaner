@@ -315,9 +315,10 @@ def seed_data(db=None) -> None:
 
             # Spezielle Logik für Stadtratsitzung + Gemeinderatssitzung
             if typ == AusschussTyp.STADTRAT:
-                # Alle Personen mit gremium="Stadtrat" als Mitglieder, p01 als Obfrau
+                # Alle Stadträt:innen + Bürgermeisterin (p01, Obfrau) als Mitglieder
                 for pkey, vor, nach, gremium, aktiv, _ in PERSONS_DATA:
-                    if gremium == "Stadtrat" and aktiv:
+                    if aktiv and (gremium in ("Stadtrat", "Stadträtin")
+                                  or pkey == "p01"):
                         pid = key_to_id[pkey]
                         if pid in seen:
                             continue

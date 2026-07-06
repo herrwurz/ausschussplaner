@@ -1,14 +1,21 @@
 """Benutzer-Management Routes - CRUD für User."""
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_super_admin
 from app.db.base import get_db
-from app.models.models import User
 from app.models.enums import BenutzerRolle
+from app.models.models import User
 from app.services.auth_service import AuthService, PasswordService
 
-router = APIRouter(prefix="/users", tags=["Benutzerverwaltung"])
+router = APIRouter(
+    prefix="/users",
+    tags=["Benutzerverwaltung"],
+    dependencies=[Depends(require_super_admin)],
+)
 
 
 class UserCreateRequest(BaseModel):
@@ -25,6 +32,7 @@ class UserUpdateRequest(BaseModel):
     nachname: str = None
     rolle: str = None
     aktiv: bool = None
+    obmann_ausschuss_ids: list[int] = None
 
 
 class UserOut(BaseModel):
@@ -52,9 +60,18 @@ def list_users(db: Session = Depends(get_db)):
             "nachname": u.nachname,
             "rolle": u.rolle.value,
             "aktiv": u.aktiv,
+            "obmann_ausschuss_ids": _parse_ausschuss_ids(u),
         }
         for u in users
     ]
+
+
+def _parse_ausschuss_ids(user: User) -> list[int]:
+    """Lese die JSON-Liste der Obmann-Ausschüsse (leer bei ungültigem Wert)."""
+    try:
+        return [int(i) for i in json.loads(user.obmann_ausschuss_ids or "[]")]
+    except (TypeError, ValueError):
+        return []
 
 
 @router.post("", response_model=dict)
@@ -63,8 +80,6 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     """Neuen Benutzer erstellen (nur SUPER_ADMIN)."""
-    # TODO: Authentifizierung überprüfen - nur SUPER_ADMIN
-
     existing = AuthService.get_user_by_email(db, req.email)
     if existing:
         raise HTTPException(
@@ -79,7 +94,7 @@ def create_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Ungültige Rolle. Erlaubte Werte: {', '.join([r.value for r in BenutzerRolle])}",
-        )
+        ) from None
 
     # Generiere temporäres Passwort
     temp_password = f"Temp{req.email.split('@')[0]}123!"
@@ -110,9 +125,7 @@ def update_user(
     req: UserUpdateRequest,
     db: Session = Depends(get_db),
 ):
-    """Benutzer aktualisieren."""
-    # TODO: Authentifizierung überprüfen - nur SUPER_ADMIN
-
+    """Benutzer aktualisieren (nur SUPER_ADMIN)."""
     user = AuthService.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(
@@ -131,9 +144,11 @@ def update_user(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Ungültige Rolle. Erlaubte Werte: {', '.join([r.value for r in BenutzerRolle])}",
-            )
+            ) from None
     if req.aktiv is not None:
         user.aktiv = req.aktiv
+    if req.obmann_ausschuss_ids is not None:
+        user.obmann_ausschuss_ids = json.dumps(req.obmann_ausschuss_ids)
 
     db.commit()
     db.refresh(user)
@@ -145,14 +160,13 @@ def update_user(
         "nachname": user.nachname,
         "rolle": user.rolle.value,
         "aktiv": user.aktiv,
+        "obmann_ausschuss_ids": _parse_ausschuss_ids(user),
     }
 
 
 @router.delete("/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db)):
-    """Benutzer löschen."""
-    # TODO: Authentifizierung überprüfen - nur SUPER_ADMIN
-
+    """Benutzer löschen (nur SUPER_ADMIN)."""
     user = AuthService.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(
@@ -168,9 +182,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{user_id}/reset-password")
 def reset_password(user_id: int, db: Session = Depends(get_db)):
-    """Passwort zurücksetzen."""
-    # TODO: Authentifizierung überprüfen - nur SUPER_ADMIN
-
+    """Passwort zurücksetzen (nur SUPER_ADMIN)."""
     user = AuthService.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(
