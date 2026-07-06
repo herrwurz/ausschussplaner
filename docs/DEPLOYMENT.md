@@ -53,9 +53,10 @@ SQLite:  /data/ausschussplaner.db  (Persistent Volume)
 
 - Login unter `https://<domain>/admin/login` mit `ADMIN_EMAIL` / `ADMIN_PASSWORD`
 - Prüfen: `https://<domain>/health` → `{"status": "ok"}`
-- **Demo-Zugang absichern:** Falls die Seed-Daten den Demo-Admin
-  `admin@ausschussplaner.local` angelegt haben, dieses Konto im Tab *Benutzer*
-  deaktivieren oder das Passwort ändern.
+- **Demo-Admin:** Der früher geseedete Demo-Admin `admin@ausschussplaner.local`
+  (Passwort öffentlich im Repo) wird beim Start automatisch **gelöscht**, sobald
+  `ADMIN_PASSWORD` gesetzt und `ADMIN_EMAIL` eine andere Adresse ist. Neue
+  Datenbanken legen ihn gar nicht mehr an.
 
 ## Updates
 

@@ -16,18 +16,17 @@ Ausführung:  python -m app.db.seed
 from __future__ import annotations
 
 from datetime import date
-from app.services.auth_service import AuthService, PasswordService
+
 from app.db.base import Base, SessionLocal, engine
-from app.models.enums import AusschussTyp, Rolle, Wochentag, BenutzerRolle
+from app.models.enums import AusschussTyp, Rolle, Wochentag
 from app.models.models import (
     Ausschuss,
     Gemeinderatsperiode,
     Jahresplan,
     Mitgliedschaft,
-    Person,
     PeriodePerson,
+    Person,
     Sitzungsregel,
-    User,
     Verfuegbarkeit,
 )
 
@@ -265,21 +264,10 @@ def seed_data(db=None) -> None:
         should_close = False
 
     try:
-        # Super Admin erstellen (falls nicht vorhanden)
-        admin_email = "admin@ausschussplaner.local"
-        if db.query(User).filter(User.email == admin_email).first() is None:
-            password_hash = PasswordService.hash_password("admin123")
-            admin_user = User(
-                email=admin_email,
-                password_hash=password_hash,
-                vorname="System",
-                nachname="Administrator",
-                rolle=BenutzerRolle.SUPER_ADMIN,
-                aktiv=True,
-            )
-            db.add(admin_user)
-            db.flush()
-            print(f"[ADMIN] Super Admin erstellt: {admin_email} (Passwort: admin123)")
+        # HINWEIS: Der frühere Demo-Admin (admin@ausschussplaner.local/admin123)
+        # wird hier NICHT mehr angelegt — der Seed läuft auch in Produktion bei
+        # leerer DB. Admin-User kommen aus ADMIN_EMAIL/ADMIN_PASSWORD (Startup,
+        # siehe main.ensure_admin_user) bzw. lokal aus create_admin.py.
 
         # Nur Personen laden wenn noch keine Personen existieren
         if db.query(Person).count() > 0:
@@ -422,7 +410,7 @@ def seed_periode_data(db) -> None:
     print(f"[OK] Gemeinderatsperiode erstellt: P1 {periode.start_jahr}-{periode.end_jahr}")
     print(f"[OK] {len(persons)} Personen zugeordnet")
     print(f"[OK] {len(ausschuesse)} Ausschuesse zugeordnet")
-    print(f"[OK] 5 Jahrespläne erstellt (2025-2029)")
+    print("[OK] 5 Jahrespläne erstellt (2025-2029)")
 
 
 if __name__ == "__main__":

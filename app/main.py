@@ -32,16 +32,27 @@ settings = get_settings()
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
+DEMO_ADMIN_EMAIL = "admin@ausschussplaner.local"
+
+
 def ensure_admin_user(db) -> None:
     """Legt den Admin-User an bzw. setzt sein Passwort (nur wenn ADMIN_PASSWORD gesetzt).
 
     Ermöglicht das Erst-Setup in Deployments ohne Shell-Zugriff (z. B. Coolify).
+    Entfernt dabei den früher geseedeten Demo-Admin (bekanntes Passwort im Repo),
+    sofern ein anderer Admin konfiguriert ist.
     """
     if not settings.admin_password:
         return
     from app.models.enums import BenutzerRolle
     from app.models.models import User
     from app.services.auth_service import PasswordService
+
+    if settings.admin_email != DEMO_ADMIN_EMAIL:
+        demo = db.query(User).filter(User.email == DEMO_ADMIN_EMAIL).first()
+        if demo:
+            db.delete(demo)
+            print(f"⚠️  Demo-Admin entfernt: {DEMO_ADMIN_EMAIL}")
 
     user = db.query(User).filter(User.email == settings.admin_email).first()
     if user:
