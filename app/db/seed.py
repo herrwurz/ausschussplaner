@@ -138,6 +138,44 @@ PERSONS_DATA = [
      [[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,N,J,J,J],[N,J,J,J,J]]),
 ]
 
+# Parteizugehoerigkeit je Person. Leerer Wert -> Feld bleibt leer (None).
+PARTEIEN_MAP: dict[str, str] = {
+    "p01": "SPÖ",  # Kerstin Suchan-Mayr   Bürgermeisterin
+    "p02": "SPÖ",  # Rafael Mugrauer       Stadtrat
+    "p03": "SPÖ",  # Birgit Seiler         Stadträtin
+    "p04": "SPÖ",  # Andreas Hofreither    Stadtrat
+    "p05": "SPÖ",  # Andrea Prohaska       Stadträtin
+    "p06": "SPÖ",  # Heinz Ströcker        Stadtrat
+    "p07": "SPÖ",  # Hans Hintersteiner    Stadtrat
+    "p08": "SPÖ",  # Eva Killinger-Spitz   Stadträtin
+    "p09": "ÖVP",  # Andreas Pum           Stadtrat
+    "p10": "ÖVP",  # Karl Bunzenberger     Stadtrat
+    "p11": "FPÖ",  # Hannes Lugmayr        Stadtrat
+    "p12": "SPÖ",  # Claudia Aufreiter     Gemeinderätin
+    "p13": "SPÖ",  # Mario Grandl          Gemeinderat
+    "p14": "SPÖ",  # Kristina Pillmayr     Gemeinderätin
+    "p15": "SPÖ",  # Mathias Mayrl         Gemeinderat
+    "p16": "SPÖ",  # Andrea Lindner        Gemeinderätin
+    "p17": "SPÖ",  # Karin Atzenhofer-K.   Gemeinderätin
+    "p18": "SPÖ",  # Max Nöbauer           Gemeinderat
+    "p19": "SPÖ",  # Julia Spanyar         Gemeinderätin
+    "p20": "SPÖ",  # Christian Aufreiter   Gemeinderat
+    "p21": "SPÖ",  # Pia Hofko             Gemeinderätin
+    "p22": "SPÖ",  # Andreas Binder        Gemeinderat
+    "p23": "SPÖ",  # Claudia Biladt        Gemeinderätin
+    "p24": "ÖVP",  # Florian Schnetzinger  Gemeinderat
+    "p25": "ÖVP",  # Theresa Purkarthofer  Gemeinderätin
+    "p26": "ÖVP",  # Karl Tröbinger        Gemeinderat
+    "p27": "ÖVP",  # Hannah Wallner        Gemeinderätin
+    "p28": "ÖVP",  # Christoph Krondorfer  Gemeinderat
+    "p29": "FPÖ",  # Sabine Abraham        Gemeinderätin
+    "p30": "FPÖ",  # Günter Helmreich      Gemeinderat
+    "p31": "FPÖ",  # Petra Hochrathner     Gemeinderätin
+    "p32": "FPÖ",  # Daniel Glötzner       Gemeinderat
+    "p33": "Die Grünen",  # Lothar Hasenleitner   Gemeinderat  [INAKTIV]
+    "p34": "Die Grünen",  # Fabian Plaimauer      Gemeinderat
+}
+
 OB = Rolle.OBMANN
 ST = Rolle.OBMANN_STELLVERTRETER
 MI = Rolle.MITGLIED
@@ -210,47 +248,20 @@ AGENDA_TRANSFER = {"from": "p33", "to": "p34"}
 
 
 def seed(reset: bool = True) -> None:
-    """Befüllt die Datenbank mit den Echtdaten."""
+    """Befuellt die Datenbank mit den Echtdaten.
+
+    Delegiert bewusst an seed_data(): frueher stand hier eine zweite,
+    unvollstaendige Kopie der Seed-Logik. Sie kannte die Sonderbehandlung
+    fuer Gemeinderats- und Stadtratsitzung nicht (beide blieben ohne
+    Mitglieder) und setzte keine Parteien.
+    """
     if reset:
         Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
-        if db.get(Sitzungsregel, 1) is None:
-            db.add(Sitzungsregel(id=1))
-
-        key_to_id: dict[str, int] = {}
-        for key, vor, nach, gremium, aktiv, matrix in PERSONS_DATA:
-            person = Person(vorname=vor, nachname=nach, gremium=gremium, aktiv=aktiv)
-            db.add(person)
-            db.flush()
-            key_to_id[key] = person.id
-            # Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
-            expanded_matrix = expand_matrix(matrix)
-            for day, row in zip(DAYS, expanded_matrix, strict=True):
-                for idx, available in enumerate(row):
-                    if available:
-                        db.add(Verfuegbarkeit(
-                            person_id=person.id, wochentag=day,
-                            stunde=SLOTS[idx], verfuegbar=True))
-
-        for name, typ, members in COMMITTEES_DATA:
-            a = Ausschuss(name=name, typ=typ, aktiv=True)
-            db.add(a)
-            db.flush()
-            seen: set[int] = set()
-            for pkey, rolle in members:
-                pid = key_to_id[pkey]
-                if pid in seen:
-                    continue
-                seen.add(pid)
-                db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=pid, rolle=rolle))
-
-        db.commit()
-        aktiv = sum(1 for p in PERSONS_DATA if p[4])
-        print(f"OK Seed abgeschlossen: {len(PERSONS_DATA)} Personen "
-              f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschuesse")
+        seed_data(db)
     finally:
         db.close()
 
@@ -280,7 +291,7 @@ def seed_data(db=None) -> None:
         # Personen + Verfügbarkeiten
         key_to_id: dict[str, int] = {}
         for idx, (key, vor, nach, gremium, aktiv, matrix) in enumerate(PERSONS_DATA):
-            partai = PARTEIEN[idx % len(PARTEIEN)]
+            partai = PARTEIEN_MAP.get(key) or None
             person = Person(vorname=vor, nachname=nach, partei=partai, gremium=gremium, aktiv=aktiv)
             db.add(person)
             db.flush()
