@@ -167,7 +167,7 @@ function PersonenTab() {
     nachname: '',
     email: '',
     gremium: '',
-    partai: '',
+    partei: '',
     aktiv: true,
   })
 
@@ -204,7 +204,7 @@ function PersonenTab() {
       }
       setShowForm(false)
       setEditingId(null)
-      setFormData({ vorname: '', nachname: '', email: '', gremium: '', partai: '', aktiv: true })
+      setFormData({ vorname: '', nachname: '', email: '', gremium: '', partei: '', aktiv: true })
       fetchPersons()
     } catch (err) {
       setError(err.response?.data?.detail || 'Fehler beim Speichern')
@@ -230,7 +230,7 @@ function PersonenTab() {
   const handleCancel = () => {
     setShowForm(false)
     setEditingId(null)
-    setFormData({ vorname: '', nachname: '', email: '', gremium: '', partai: '', aktiv: true })
+    setFormData({ vorname: '', nachname: '', email: '', gremium: '', partei: '', aktiv: true })
   }
 
   return (
@@ -278,8 +278,8 @@ function PersonenTab() {
             <input
               type="text"
               placeholder="Partei (z.B. ÖVP, SPÖ)"
-              value={formData.partai}
-              onChange={(e) => setFormData({ ...formData, partai: e.target.value })}
+              value={formData.partei}
+              onChange={(e) => setFormData({ ...formData, partei: e.target.value })}
             />
           </div>
           <div className="form-check">
@@ -325,7 +325,7 @@ function PersonenTab() {
                   <td>{person.nachname}</td>
                   <td>{person.email}</td>
                   <td>{person.gremium}</td>
-                  <td>{person.partai || '-'}</td>
+                  <td>{person.partei || '-'}</td>
                   <td>{person.aktiv ? '✅ Aktiv' : '❌ Inaktiv'}</td>
                   <td className="actions">
                     <button className="btn btn-sm btn-warning" onClick={() => handleEdit(person)}>
