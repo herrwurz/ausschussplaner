@@ -15,9 +15,49 @@ const localizer = dateFnsLocalizer({
   locales,
 })
 
+const WOCHENTAG_OFFSET = { MO: 0, DI: 1, MI: 2, DO: 3, FR: 4 }
+
+function mondayOfWeek(refDate) {
+  const d = new Date(refDate)
+  const day = d.getDay() // 0=So … 6=Sa
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function vorschlagToEvent(v, ausschussName) {
+  const monday = mondayOfWeek(new Date())
+  // Sitzungsvorschlag speichert relative Woche (1/2) ohne Absolutdatum —
+  // wir legen Woche 1 auf die aktuelle Kalenderwoche.
+  const offset = WOCHENTAG_OFFSET[(v.wochentag || '').toUpperCase()]
+  if (offset === undefined) return null
+
+  const start = new Date(monday)
+  start.setDate(monday.getDate() + (v.woche - 1) * 7 + offset)
+  start.setHours(Math.floor(v.start_minute / 60), v.start_minute % 60, 0, 0)
+
+  const end = new Date(start)
+  end.setHours(Math.floor(v.end_minute / 60), v.end_minute % 60, 0, 0)
+
+  return {
+    id: v.id,
+    title: ausschussName || `Ausschuss #${v.ausschuss_id}`,
+    start,
+    end,
+    resource: {
+      ausschuss_name: ausschussName || `Ausschuss #${v.ausschuss_id}`,
+      status: v.status,
+      quote: v.quote,
+      ort: 'Gemeindehaus',
+    },
+  }
+}
+
 export default function PersonSitzungen() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [selectedEvent, setSelectedEvent] = useState(null)
   const navigate = useNavigate()
 
@@ -30,47 +70,27 @@ export default function PersonSitzungen() {
 
     const fetchSitzungen = async () => {
       try {
-        const committeeRes = await api.get('/person/me/committees', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        setError('')
+        const [committeeRes, resultsRes] = await Promise.all([
+          api.get('/person/me/committees'),
+          api.get('/person/me/sitzungen'),
+        ])
 
-        const now = new Date()
-        const calendarEvents = []
+        const nameById = Object.fromEntries(
+          (committeeRes.data || []).map((c) => [c.ausschuss_id, c.ausschuss_name])
+        )
 
-        committeeRes.data.forEach((committee, idx) => {
-          for (let i = -4; i <= 8; i++) {
-            const date = new Date(now)
-            date.setDate(date.getDate() + (i * 7))
-
-            const hour = 10 + (idx % 4)
-            const startTime = new Date(date)
-            startTime.setHours(hour, 0, 0, 0)
-
-            const endTime = new Date(startTime)
-            endTime.setHours(hour + 1, 30, 0, 0)
-
-            calendarEvents.push({
-              id: `${committee.ausschuss_id}-${i}`,
-              title: committee.ausschuss_name,
-              start: startTime,
-              end: endTime,
-              resource: {
-                ausschuss_name: committee.ausschuss_name,
-                typ: committee.typ,
-                rolle: committee.rolle,
-                ort: 'Gemeindehaus',
-                beschlussfaehig: idx % 2 === 0,
-                beschreibung: `Sitzung des Ausschusses ${committee.ausschuss_name}`,
-              },
-            })
-          }
-        })
+        const calendarEvents = (resultsRes.data || [])
+          .map((v) => vorschlagToEvent(v, nameById[v.ausschuss_id]))
+          .filter(Boolean)
 
         setEvents(calendarEvents)
       } catch (err) {
         if (err.response?.status === 401) {
           navigate('/person/login')
+          return
         }
+        setError('Sitzungen konnten nicht geladen werden')
       } finally {
         setLoading(false)
       }
@@ -79,146 +99,62 @@ export default function PersonSitzungen() {
     fetchSitzungen()
   }, [navigate])
 
-  const eventStyleGetter = (event) => {
-    let backgroundColor = '#2563eb'
-    if (event.resource.beschlussfaehig) {
-      backgroundColor = '#10b981'
-    } else {
-      backgroundColor = '#f59e0b'
-    }
-
-    return {
-      style: {
-        backgroundColor,
-        borderRadius: '8px',
-        opacity: 0.9,
-        color: 'white',
-        border: '0px',
-        display: 'block',
-        fontWeight: 'bold',
-      },
-    }
+  if (loading) {
+    return <div className="container mt-4">Lädt…</div>
   }
 
-  if (loading) return <div className="alert alert-info">Lädt...</div>
-
   return (
-    <div className="container-fluid mt-5">
-      <Link to="/person/dashboard" className="btn btn-secondary mb-3">
-        ← Zurück zum Dashboard
-      </Link>
-      <h1>Meine möglichen Sitzungstermine</h1>
-
-      <div className="row">
-        <div className="col-lg-9">
-          <div className="card p-3" style={{ height: '700px' }}>
-            <Calendar
-              localizer={localizer}
-              events={events}
-              startAccessor="start"
-              endAccessor="end"
-              style={{ height: '100%' }}
-              onSelectEvent={setSelectedEvent}
-              eventPropGetter={eventStyleGetter}
-              popup
-              views={['month', 'week', 'day']}
-              defaultView="month"
-            />
-          </div>
-        </div>
-
-        <div className="col-lg-3">
-          <div className="card p-4">
-            <h5>Sitzungsdetails</h5>
-            {selectedEvent ? (
-              <div>
-                <hr />
-                <p>
-                  <strong>Ausschuss:</strong>
-                  <br />
-                  {selectedEvent.resource.ausschuss_name}
-                </p>
-                <p>
-                  <strong>Typ:</strong>
-                  <br />
-                  <span className="badge bg-info">{selectedEvent.resource.typ}</span>
-                </p>
-                <p>
-                  <strong>Datum:</strong>
-                  <br />
-                  {format(selectedEvent.start, 'dd.MM.yyyy', { locale: de })}
-                </p>
-                <p>
-                  <strong>Uhrzeit:</strong>
-                  <br />
-                  {format(selectedEvent.start, 'HH:mm', { locale: de })} -{' '}
-                  {format(selectedEvent.end, 'HH:mm', { locale: de })}
-                </p>
-                <p>
-                  <strong>Ort:</strong>
-                  <br />
-                  {selectedEvent.resource.ort}
-                </p>
-                <p>
-                  <strong>Rolle:</strong>
-                  <br />
-                  {selectedEvent.resource.rolle}
-                </p>
-                <p>
-                  <strong>Status:</strong>
-                  <br />
-                  {selectedEvent.resource.beschlussfaehig ? (
-                    <span className="badge bg-success">Beschlussfähig</span>
-                  ) : (
-                    <span className="badge bg-warning">Nicht beschlussfähig</span>
-                  )}
-                </p>
-                <p>
-                  <strong>Beschreibung:</strong>
-                  <br />
-                  {selectedEvent.resource.beschreibung}
-                </p>
-              </div>
-            ) : (
-              <div className="alert alert-info mt-3">
-                Klicke auf ein Event, um Details zu sehen
-              </div>
-            )}
-          </div>
-
-          <div className="card p-4 mt-3">
-            <h5>Legende</h5>
-            <div className="mt-3">
-              <p>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '12px',
-                    height: '12px',
-                    backgroundColor: '#10b981',
-                    borderRadius: '2px',
-                    marginRight: '8px',
-                  }}
-                ></span>
-                Beschlussfähig
-              </p>
-              <p>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '12px',
-                    height: '12px',
-                    backgroundColor: '#f59e0b',
-                    borderRadius: '2px',
-                    marginRight: '8px',
-                  }}
-                ></span>
-                Nicht beschlussfähig
-              </p>
-            </div>
-          </div>
-        </div>
+    <div className="container mt-4">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h2>Meine Sitzungen</h2>
+        <Link to="/person/dashboard" className="btn btn-secondary">Zurück</Link>
       </div>
+
+      {error && <div className="alert alert-danger">{error}</div>}
+
+      {events.length === 0 && !error && (
+        <div className="alert alert-info">
+          Keine fixierten Sitzungstermine für deine Ausschüsse. Der Admin muss Termine zuerst fixieren.
+        </div>
+      )}
+
+      <div style={{ height: 600 }}>
+        <Calendar
+          localizer={localizer}
+          events={events}
+          startAccessor="start"
+          endAccessor="end"
+          culture="de"
+          onSelectEvent={setSelectedEvent}
+          messages={{
+            today: 'Heute',
+            previous: 'Zurück',
+            next: 'Weiter',
+            month: 'Monat',
+            week: 'Woche',
+            day: 'Tag',
+            agenda: 'Agenda',
+            noEventsInRange: 'Keine Termine in diesem Zeitraum',
+          }}
+        />
+      </div>
+
+      {selectedEvent && (
+        <div className="card mt-3 p-3">
+          <h4>{selectedEvent.resource.ausschuss_name}</h4>
+          <p>
+            {format(selectedEvent.start, 'EEEE, d. MMMM yyyy HH:mm', { locale: de })}
+            {' – '}
+            {format(selectedEvent.end, 'HH:mm', { locale: de })}
+          </p>
+          {selectedEvent.resource.quote != null && (
+            <p>Anwesenheitsquote: {selectedEvent.resource.quote}%</p>
+          )}
+          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedEvent(null)}>
+            Schließen
+          </button>
+        </div>
+      )}
     </div>
   )
 }

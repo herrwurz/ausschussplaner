@@ -5,11 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Gemeinderatsperiode
 from app.schemas.schemas import PeriodeOut
 
-router = APIRouter(prefix="/perioden", tags=["Perioden"])
+router = APIRouter(
+    prefix="/perioden",
+    tags=["Perioden"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 class PeriodeCreate(BaseModel):

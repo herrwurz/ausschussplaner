@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.enums import Rolle, TerminStatus, Wochentag
-from app.models.models import Ausschuss, Mitgliedschaft, Person, Sitzungsregel
+from app.models.models import Ausschuss, Mitgliedschaft, Person, Sitzungsregel, Sitzungsvorschlag
 from app.schemas.schemas import (
     AusschussAnalyse,
     BerechnungRequest,
@@ -18,6 +18,46 @@ from app.schemas.schemas import (
     TerminVorschlagOut,
 )
 from app.services import scheduler as sched
+
+
+def _minutes_to_time(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _load_fixed_slots(db: Session, ausschuss_ids: set[int]) -> list[sched.OccupiedSlot]:
+    """Lade fixierte Sitzungsvorschläge als belegte Slots (mit Mitglieder-IDs)."""
+    if not ausschuss_ids:
+        return []
+    vorschlaege = (
+        db.query(Sitzungsvorschlag)
+        .filter(Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids))
+        .all()
+    )
+    if not vorschlaege:
+        return []
+
+    # Mitglieder je Ausschuss
+    members_by_committee: dict[int, frozenset[int]] = {}
+    for aid in {v.ausschuss_id for v in vorschlaege}:
+        rows = db.query(Mitgliedschaft.person_id).filter(
+            Mitgliedschaft.ausschuss_id == aid,
+            Mitgliedschaft.rolle.in_([Rolle.OBMANN, Rolle.OBMANN_STELLVERTRETER, Rolle.MITGLIED]),
+        ).all()
+        members_by_committee[aid] = frozenset(r[0] for r in rows)
+
+    blocked: list[sched.OccupiedSlot] = []
+    for v in vorschlaege:
+        name = v.ausschuss.name if v.ausschuss else f"Ausschuss {v.ausschuss_id}"
+        blocked.append(sched.OccupiedSlot(
+            week=v.woche,
+            weekday=v.wochentag,
+            start_time=_minutes_to_time(v.start_minute),
+            end_time=_minutes_to_time(v.end_minute),
+            person_ids=members_by_committee.get(v.ausschuss_id, frozenset()),
+            committee_id=v.ausschuss_id,
+            label=name,
+        ))
+    return blocked
 
 
 def _load_regel(db: Session) -> Sitzungsregel:
@@ -219,9 +259,20 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
         filtered = [e for e in evaluations if e.quote >= min_quote]
         all_evaluations_by_committee[ausschuss.id] = filtered
 
-    # STEP 2: Global scheduling - Vermeidung von Konflikten
-    global_schedule = sched.global_schedule_committees(all_evaluations_by_committee)
-
+    # STEP 2: Global scheduling - Fixierte Termine + Tageslimit + Mitgliederkonflikte
+    max_pro_tag = req.max_ausschuesse_pro_tag or regel.max_ausschuesse_pro_tag
+    all_active_ids = set(
+        db.scalars(select(Ausschuss.id).where(Ausschuss.aktiv.is_(True))).all()
+    )
+    # Fixierte Termine aller aktiven Ausschüsse (nicht nur der berechneten),
+    # damit Personenkonflikte mit bereits fixierten anderen Gremien erkannt werden
+    blocked = _load_fixed_slots(db, all_active_ids)
+    global_schedule = sched.global_schedule_committees(
+        all_evaluations_by_committee,
+        blocked=blocked,
+        max_ausschuesse_pro_tag=max_pro_tag,
+        member_aware=True,
+    )
     # STEP 3: Formatiere Ergebnisse
     analysen: list[AusschussAnalyse] = []
 
@@ -303,6 +354,11 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
         analysen=analysen,
         start_datum=start_date,
         planungswochen=weeks,
+        zusammenfassung={
+            "konflikte": global_schedule.conflicts,
+            "zugewiesen": len(global_schedule.assigned),
+            "ausschuesse": len(ausschuesse),
+        },
     )
 
 

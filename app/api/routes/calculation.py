@@ -5,11 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.schemas.schemas import BerechnungRequest, BerechnungResponse, SitzungsvorschlagOut
 from app.services.calculation_service import run_calculation, save_calculation_results
 
-router = APIRouter(prefix="/calculate", tags=["Berechnung"])
+router = APIRouter(
+    prefix="/calculate",
+    tags=["Berechnung"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 @router.post("", response_model=BerechnungResponse)

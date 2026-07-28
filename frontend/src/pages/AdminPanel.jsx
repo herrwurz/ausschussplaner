@@ -16,41 +16,52 @@ export default function AdminPanel() {
   const navigate = useNavigate()
   const location = useLocation()
   const [activeTab, setActiveTab] = useState('personen')
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  let user = {}
+  try {
+    user = JSON.parse(localStorage.getItem('user') || '{}')
+  } catch {
+    user = {}
+  }
   const isSuperAdmin = user.rolle === 'super_admin'
 
-  useEffect(() => {
-    // Set tab based on URL path
-    if (location.pathname.includes('perioden')) {
-      setActiveTab('perioden')
-    } else if (location.pathname.includes('ausschuesse')) {
-      setActiveTab('ausschuesse')
-    } else if (location.pathname.includes('mitgliedschaften')) {
-      setActiveTab('mitgliedschaften')
-    } else if (location.pathname.includes('termine-berechnung')) {
-      setActiveTab('termine-berechnung')
-    } else if (location.pathname.includes('fixierte-termine')) {
-      setActiveTab('fixierte-termine')
-    } else if (location.pathname.includes('abwesenheiten')) {
-      setActiveTab('abwesenheiten')
-    } else if (location.pathname.includes('verfuegbarkeiten')) {
-      setActiveTab('verfuegbarkeiten')
-    } else {
-      setActiveTab('personen')
+  const TAB_PATHS = {
+    benutzer: '/admin/benutzer',
+    personen: '/admin/personen',
+    perioden: '/admin/perioden',
+    ausschuesse: '/admin/ausschuesse',
+    mitgliedschaften: '/admin/mitgliedschaften',
+    'termine-berechnung': '/admin/termine-berechnung',
+    'fixierte-termine': '/admin/fixierte-termine',
+    abwesenheiten: '/admin/abwesenheiten',
+    verfuegbarkeiten: '/admin/verfuegbarkeiten',
+    sitzungsregeln: '/admin/sitzungsregeln',
+  }
+
+  const pathToTab = (pathname) => {
+    const entry = Object.entries(TAB_PATHS).find(([, path]) => pathname.includes(path.replace('/admin/', '')))
+    if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'personen'
+    for (const [tab, path] of Object.entries(TAB_PATHS)) {
+      if (pathname === path || pathname.endsWith(path.split('/').pop())) return tab
     }
+    return entry ? entry[0] : 'personen'
+  }
+
+  useEffect(() => {
+    setActiveTab(pathToTab(location.pathname))
   }, [location.pathname])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
-    const user = localStorage.getItem('user')
-    console.log('AdminPanel useEffect: token=', !!token, 'user=', !!user)
-    console.log('localStorage keys:', Object.keys(localStorage))
-
-    if (!token || !user) {
-      console.log('AdminPanel: Redirecting to login (no token or user)')
+    const raw = localStorage.getItem('user')
+    if (!token || !raw) {
       navigate('/admin/login', { replace: true })
     }
-  }, [])
+  }, [navigate])
+
+  const selectTab = (tab) => {
+    setActiveTab(tab)
+    navigate(TAB_PATHS[tab] || '/admin/panel')
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('token')
@@ -74,65 +85,65 @@ export default function AdminPanel() {
         {isSuperAdmin && (
           <button
             className={`tab-btn ${activeTab === 'benutzer' ? 'active' : ''}`}
-            onClick={() => setActiveTab('benutzer')}
+            onClick={() => selectTab('benutzer')}
           >
-            🔐 Benutzer
+            Benutzer
           </button>
         )}
         <button
           className={`tab-btn ${activeTab === 'personen' ? 'active' : ''}`}
-          onClick={() => setActiveTab('personen')}
+          onClick={() => selectTab('personen')}
         >
-          👥 Personen
+          Personen
         </button>
         <button
           className={`tab-btn ${activeTab === 'perioden' ? 'active' : ''}`}
-          onClick={() => setActiveTab('perioden')}
+          onClick={() => selectTab('perioden')}
         >
-          📅 Perioden
+          Perioden
         </button>
         <button
           className={`tab-btn ${activeTab === 'ausschuesse' ? 'active' : ''}`}
-          onClick={() => setActiveTab('ausschuesse')}
+          onClick={() => selectTab('ausschuesse')}
         >
-          📋 Ausschüsse
+          Ausschüsse
         </button>
         <button
           className={`tab-btn ${activeTab === 'mitgliedschaften' ? 'active' : ''}`}
-          onClick={() => setActiveTab('mitgliedschaften')}
+          onClick={() => selectTab('mitgliedschaften')}
         >
-          🎭 Mitgliedschaften
+          Mitgliedschaften
         </button>
         <button
           className={`tab-btn ${activeTab === 'termine-berechnung' ? 'active' : ''}`}
-          onClick={() => setActiveTab('termine-berechnung')}
+          onClick={() => selectTab('termine-berechnung')}
         >
-          📊 Berechnung
+          Berechnung
         </button>
         <button
           className={`tab-btn ${activeTab === 'fixierte-termine' ? 'active' : ''}`}
-          onClick={() => setActiveTab('fixierte-termine')}
+          onClick={() => selectTab('fixierte-termine')}
         >
-          📅 Fixierte Termine
+          Fixierte Termine
         </button>
         <button
           className={`tab-btn ${activeTab === 'abwesenheiten' ? 'active' : ''}`}
-          onClick={() => setActiveTab('abwesenheiten')}
+          onClick={() => selectTab('abwesenheiten')}
         >
-          🏖️ Abwesenheiten
+          Abwesenheiten
         </button>
         <button
           className={`tab-btn ${activeTab === 'verfuegbarkeiten' ? 'active' : ''}`}
-          onClick={() => setActiveTab('verfuegbarkeiten')}
+          onClick={() => selectTab('verfuegbarkeiten')}
         >
-          🕐 Verfügbarkeiten
+          Verfügbarkeiten
         </button>
         {isSuperAdmin && (
           <button
             className={`tab-btn ${activeTab === 'sitzungsregeln' ? 'active' : ''}`}
-            onClick={() => setActiveTab('sitzungsregeln')}
+            onClick={() => selectTab('sitzungsregeln')}
           >
-            ⚙️ Sitzungsregeln
+            Sitzungsregeln
           </button>
         )}
       </div>

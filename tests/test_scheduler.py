@@ -17,6 +17,7 @@ from app.services.scheduler import (
     TIME_SLOTS,
     CommitteeInput,
     MemberInput,
+    OccupiedSlot,
     SlotEvaluation,
     evaluate_committee_slots,
     global_schedule_committees,
@@ -114,6 +115,14 @@ def test_duplicate_member_deduplicated():
 
 # ── Status & Priorität ────────────────────────────────────────────────────────
 
+def test_empty_committee_is_not_top():
+    """Ausschuss ohne Mitglieder darf keinen 100%-Termin erzeugen."""
+    res = evaluate_committee_slots(committee([]), weeks=1)
+    assert res
+    assert all(e.full_attendance is False for e in res)
+    assert all(e.status == TerminStatus.NICHT_BESCHLUSSFAEHIG for e in res)
+
+
 def test_full_attendance_is_top():
     avail = {Wochentag.DI: {"16:00", "17:00"}}
     members = [member(1, Rolle.OBMANN, avail), member(2, avail=avail)]
@@ -194,17 +203,23 @@ def test_absence_applies_to_correct_week():
 
 # ── Globaler Scheduler ────────────────────────────────────────────────────────
 
-def _make_eval(cid, week, weekday, start, end):
+def _make_eval(cid, week, weekday, start, end, person_ids=None):
+    pids = list(person_ids) if person_ids is not None else []
+    present = [
+        MemberInput(pid, f"P{pid}", Rolle.MITGLIED, {}, frozenset())
+        for pid in pids
+    ]
     return SlotEvaluation(
         committee_id=cid, committee_name=f"C{cid}", week=week, weekday=weekday,
         start_time=start, end_time=end, required_availability_hours=[],
-        present_members=[], missing_members=[], attendance_count=3,
-        total_members=3, attendance_rate=1.0, chair_present=True,
+        present_members=present, missing_members=[], attendance_count=max(len(pids), 1),
+        total_members=max(len(pids), 1), attendance_rate=1.0, chair_present=True,
         deputy_chair_present=False, quorate=True, full_attendance=True,
     )
 
 
 def test_global_schedule_avoids_overlap():
+    # Ohne person_ids → Hard-Block bei Zeitüberlappung (leere Mengen)
     opts1 = [_make_eval(1, 1, Wochentag.MO, "17:00", "18:30"),
              _make_eval(1, 2, Wochentag.MO, "17:00", "18:30")]
     opts2 = [_make_eval(2, 1, Wochentag.MO, "17:00", "18:30"),
@@ -212,6 +227,53 @@ def test_global_schedule_avoids_overlap():
     schedule = global_schedule_committees({1: opts1, 2: opts2})
     a1, a2 = schedule.assigned[1], schedule.assigned[2]
     assert (a1.week, a1.weekday) != (a2.week, a2.weekday) or a1.start_time != a2.start_time
+
+
+def test_global_schedule_allows_parallel_without_shared_members():
+    """Ohne gemeinsame Personen dürfen parallele Termine stattfinden."""
+    opts1 = [_make_eval(1, 1, Wochentag.MO, "17:00", "18:30", person_ids=[1, 2])]
+    opts2 = [_make_eval(2, 1, Wochentag.MO, "17:00", "18:30", person_ids=[3, 4])]
+    schedule = global_schedule_committees({1: opts1, 2: opts2}, member_aware=True)
+    assert schedule.assigned[1].week == schedule.assigned[2].week
+    assert schedule.assigned[1].start_time == schedule.assigned[2].start_time
+
+
+def test_global_schedule_blocks_shared_members():
+    opts1 = [_make_eval(1, 1, Wochentag.MO, "17:00", "18:30", person_ids=[1, 2]),
+             _make_eval(1, 1, Wochentag.DI, "17:00", "18:30", person_ids=[1, 2])]
+    opts2 = [_make_eval(2, 1, Wochentag.MO, "17:00", "18:30", person_ids=[2, 3])]
+    schedule = global_schedule_committees({1: opts1, 2: opts2}, member_aware=True)
+    a1, a2 = schedule.assigned[1], schedule.assigned[2]
+    # Person 2 in beiden → nicht parallel Mo 17:00
+    assert not (
+        a1.week == a2.week and a1.weekday == a2.weekday and a1.start_time == a2.start_time
+    )
+
+
+def test_global_schedule_respects_fixed_and_max_per_day():
+    blocked = [OccupiedSlot(
+        week=1, weekday=Wochentag.MO, start_time="17:00", end_time="18:30",
+        person_ids=frozenset({10}), committee_id=99, label="Fix",
+    )]
+    opts = [
+        _make_eval(1, 1, Wochentag.MO, "17:00", "18:30", person_ids=[10, 11]),
+        _make_eval(1, 1, Wochentag.DI, "17:00", "18:30", person_ids=[10, 11]),
+    ]
+    schedule = global_schedule_committees(
+        {1: opts}, blocked=blocked, max_ausschuesse_pro_tag=2, member_aware=True,
+    )
+    assert schedule.assigned[1].weekday == Wochentag.DI
+
+    # Tageslimit: Mo schon 1x belegt → max=1 erzwingt anderen Tag
+    opts_a = [_make_eval(1, 1, Wochentag.MO, "16:00", "17:30", person_ids=[1])]
+    opts_b = [
+        _make_eval(2, 1, Wochentag.MO, "18:00", "19:30", person_ids=[2]),
+        _make_eval(2, 1, Wochentag.DI, "18:00", "19:30", person_ids=[2]),
+    ]
+    schedule2 = global_schedule_committees(
+        {1: opts_a, 2: opts_b}, max_ausschuesse_pro_tag=1, member_aware=True,
+    )
+    assert schedule2.assigned[2].weekday == Wochentag.DI
 
 
 def test_global_schedule_skips_committee_without_options():

@@ -327,7 +327,8 @@ def evaluate_committee_slots(
                     chair_present=chair_present,
                     deputy_chair_present=deputy_present,
                     quorate=quorate,
-                    full_attendance=len(missing) == 0,
+                    # Leerer Ausschuss ist kein 100%-Termin (nach Copy ohne Mitglieder)
+                    full_attendance=bool(real_members) and len(missing) == 0,
                 )
                 results.append(eval_result)
 
@@ -380,6 +381,18 @@ def sort_evaluations(results: list[SlotEvaluation]) -> list[SlotEvaluation]:
 # GLOBALES SCHEDULING - Konflikt-Vermeidung
 # ═══════════════════════════════════════════════════════════════════════════
 
+@dataclass(frozen=True)
+class OccupiedSlot:
+    """Bereits belegter Zeitslot (fixierter Termin oder zugewiesener Vorschlag)."""
+    week: int
+    weekday: Wochentag
+    start_time: str
+    end_time: str
+    person_ids: frozenset[int] = field(default_factory=frozenset)
+    committee_id: int | None = None
+    label: str = ""
+
+
 @dataclass
 class GlobalSchedule:
     """Globale Planung mit Konflikt-Erkennung."""
@@ -388,15 +401,7 @@ class GlobalSchedule:
 
 
 def _times_overlap(start1: str, end1: str, start2: str, end2: str) -> bool:
-    """Prüfe ob zwei Zeitintervalle sich überschneiden.
-
-    Args:
-        start1, end1: "HH:MM" format
-        start2, end2: "HH:MM" format
-
-    Returns:
-        True wenn Überschneidung existiert
-    """
+    """Prüfe ob zwei Zeitintervalle sich überschneiden."""
     def time_to_minutes(time_str: str) -> int:
         h, m = map(int, time_str.split(":"))
         return h * 60 + m
@@ -405,41 +410,98 @@ def _times_overlap(start1: str, end1: str, start2: str, end2: str) -> bool:
     end1_min = time_to_minutes(end1)
     start2_min = time_to_minutes(start2)
     end2_min = time_to_minutes(end2)
-
-    # Zwei Intervalle überschneiden sich, wenn:
-    # start1 < end2 UND start2 < end1
     return start1_min < end2_min and start2_min < end1_min
+
+
+def _member_ids(e: SlotEvaluation) -> frozenset[int]:
+    """Alle Mitglieder eines Slots (anwesend + fehlend)."""
+    return frozenset(m.person_id for m in e.present_members) | frozenset(
+        m.person_id for m in e.missing_members
+    )
+
+
+def _evaluation_to_occupied(e: SlotEvaluation) -> OccupiedSlot:
+    return OccupiedSlot(
+        week=e.week,
+        weekday=e.weekday,
+        start_time=e.start_time,
+        end_time=e.end_time,
+        person_ids=_member_ids(e),
+        committee_id=e.committee_id,
+        label=e.committee_name,
+    )
+
+
+def _slots_conflict(
+    week: int,
+    weekday: Wochentag,
+    start: str,
+    end: str,
+    person_ids: frozenset[int],
+    occupied: OccupiedSlot,
+    *,
+    member_aware: bool = True,
+) -> bool:
+    """Konflikt: gleiche Woche/Tag + Zeitüberlappung + (gemeinsame Personen oder Hard-Block)."""
+    if occupied.week != week or occupied.weekday != weekday:
+        return False
+    if not _times_overlap(occupied.start_time, occupied.end_time, start, end):
+        return False
+    if not member_aware:
+        return True
+    # Leere person_ids = Hard-Block (z. B. unbekannte Besetzung)
+    if not occupied.person_ids or not person_ids:
+        return True
+    return bool(occupied.person_ids & person_ids)
+
+
+def _day_count(occupied: list[OccupiedSlot], week: int, weekday: Wochentag) -> int:
+    return sum(1 for o in occupied if o.week == week and o.weekday == weekday)
+
+
+def _option_allowed(
+    option: SlotEvaluation,
+    occupied: list[OccupiedSlot],
+    max_per_day: int | None,
+    *,
+    member_aware: bool = True,
+) -> bool:
+    persons = _member_ids(option)
+    for occ in occupied:
+        if _slots_conflict(
+            option.week, option.weekday, option.start_time, option.end_time,
+            persons, occ, member_aware=member_aware,
+        ):
+            return False
+    if max_per_day is not None and max_per_day > 0:
+        if _day_count(occupied, option.week, option.weekday) >= max_per_day:
+            return False
+    return True
 
 
 def _backtrack_schedule(
     committees: list[tuple],
-    all_evaluations: dict[int, list[SlotEvaluation]],
     assigned: dict[int, SlotEvaluation],
-    occupied: list[SlotEvaluation],
+    occupied: list[OccupiedSlot],
     index: int,
+    max_per_day: int | None,
+    member_aware: bool,
 ) -> bool:
     """Recursive backtracking to find conflict-free scheduling."""
     if index == len(committees):
-        week_dist: dict[int, int] = {}
-        for e in occupied:
-            week_dist[e.week] = week_dist.get(e.week, 0) + 1
-        logger.debug("Backtracking erfolgreich – Wochenverteilung: %s", week_dist)
-        return True  # All assigned successfully
+        return True
 
     committee_id, evaluations = committees[index]
 
-    # Count week load to balance across weeks
     week_counts: dict[int, int] = {}
     for occ in occupied:
         week_counts[occ.week] = week_counts.get(occ.week, 0) + 1
 
-    # Einheitliche Priorität (Spez §6) + Wochen-Balance als Zwischenkriterium:
-    # Statusstufe zuerst, dann weniger belastete Woche, dann restliche Priorität.
     sorted_options = sorted(
         evaluations,
         key=lambda e: (
             status_rank(e),
-            week_counts.get(e.week, 0),  # Prefer weeks with fewer committees
+            week_counts.get(e.week, 0),
             -e.attendance_count,
             -e.attendance_rate,
             WEEKDAY_SCORE[e.weekday],
@@ -448,95 +510,87 @@ def _backtrack_schedule(
     )
 
     for option in sorted_options:
-        # Check if this option conflicts
-        has_conflict = False
-        for occ in occupied:
-            if (
-                occ.week == option.week
-                and occ.weekday == option.weekday
-                and _times_overlap(occ.start_time, occ.end_time, option.start_time, option.end_time)
-            ):
-                has_conflict = True
-                break
+        if not _option_allowed(option, occupied, max_per_day, member_aware=member_aware):
+            continue
 
-        if not has_conflict:
-            # Try this option
-            assigned[committee_id] = option
-            occupied.append(option)
+        assigned[committee_id] = option
+        occupied.append(_evaluation_to_occupied(option))
 
-            if _backtrack_schedule(committees, all_evaluations, assigned, occupied, index + 1):
-                return True
+        if _backtrack_schedule(
+            committees, assigned, occupied, index + 1, max_per_day, member_aware
+        ):
+            return True
 
-            # Backtrack
-            occupied.pop()
-            del assigned[committee_id]
+        occupied.pop()
+        del assigned[committee_id]
 
     return False
 
 
 def global_schedule_committees(
     all_evaluations: dict[int, list[SlotEvaluation]],
+    *,
+    blocked: list[OccupiedSlot] | None = None,
+    max_ausschuesse_pro_tag: int | None = None,
+    member_aware: bool = True,
 ) -> GlobalSchedule:
-    """Backtracking Scheduling - finds conflict-free solution or best approximation.
+    """Backtracking Scheduling mit optionalen Fix-Terminen und Tageslimit.
 
-    Uses recursive backtracking to explore the search space,
-    prioritizing committees with fewer options and better quality.
+    Konflikt = Zeitüberlappung am selben Tag **und** gemeinsame Mitglieder
+    (wenn member_aware=True). Fixierte Termine in `blocked` belegen Slots vorab.
     """
-    # Ausschüsse ohne Optionen können nie zugewiesen werden — überspringen,
-    # sonst schlägt das Backtracking für ALLE fehl (und der Greedy-Fallback
-    # crasht mit IndexError).
     skipped = [cid for cid, evals in all_evaluations.items() if not evals]
     if skipped:
         logger.warning("Ausschüsse ohne Terminoptionen (übersprungen): %s", skipped)
 
-    # Sort by complexity (fewer options = harder to place = try first)
     sorted_committees = sorted(
         ((cid, evals) for cid, evals in all_evaluations.items() if evals),
         key=lambda x: len(x[1]),
     )
 
+    seed = list(blocked or [])
     assigned: dict[int, SlotEvaluation] = {}
-    occupied: list[SlotEvaluation] = []
+    occupied: list[OccupiedSlot] = list(seed)
 
-    # Try backtracking
-    success = _backtrack_schedule(sorted_committees, all_evaluations, assigned, occupied, 0)
+    success = _backtrack_schedule(
+        sorted_committees, assigned, occupied, 0,
+        max_ausschuesse_pro_tag, member_aware,
+    )
     logger.info(
         "Backtracking: %s – zugewiesen %d/%d Ausschüsse",
         "SUCCESS" if success else "FAILED", len(assigned), len(sorted_committees),
     )
 
+    conflicts = [f"Ausschuss {cid}: keine Terminoptionen" for cid in skipped]
+    if blocked:
+        conflicts.extend(
+            f"Fixiert: {b.label or b.committee_id} ({b.weekday.value} W{b.week} {b.start_time})"
+            for b in blocked
+        )
+
     if success:
-        # Success - all assigned without conflicts
-        conflicts = [f"Ausschuss {cid}: keine Terminoptionen" for cid in skipped]
         return GlobalSchedule(assigned=assigned, conflicts=conflicts)
 
-    # If backtracking fails, fall back to greedy (best-effort, may keep conflicts)
     logger.warning("Backtracking fehlgeschlagen – Greedy-Fallback")
     assigned = {}
-    occupied = []
+    occupied = list(seed)
     conflicts = [f"Ausschuss {cid}: keine Terminoptionen" for cid in skipped]
 
     for committee_id, evaluations in sorted_committees:
         sorted_options = sorted(evaluations, key=priority_key)
-
         placed = False
         for option in sorted_options:
-            has_conflict = any(
-                occ.week == option.week and occ.weekday == option.weekday and
-                _times_overlap(occ.start_time, occ.end_time, option.start_time, option.end_time)
-                for occ in occupied
-            )
-
-            if not has_conflict:
+            if _option_allowed(
+                option, occupied, max_ausschuesse_pro_tag, member_aware=member_aware
+            ):
                 assigned[committee_id] = option
-                occupied.append(option)
+                occupied.append(_evaluation_to_occupied(option))
                 placed = True
                 break
 
         if not placed:
-            # Force assign best option und Konflikt ausweisen
             assigned[committee_id] = sorted_options[0]
-            occupied.append(sorted_options[0])
+            occupied.append(_evaluation_to_occupied(sorted_options[0]))
             conflicts.append(
                 f"Ausschuss {committee_id}: Terminüberschneidung nicht auflösbar"
             )

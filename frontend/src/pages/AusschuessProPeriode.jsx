@@ -7,7 +7,10 @@ export default function AusschuessProPeriode() {
   const [ausschuesse, setAusschuesse] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [showCopy, setShowCopy] = useState(false)
+  const [copySourcePeriodId, setCopySourcePeriodId] = useState(null)
   const [formData, setFormData] = useState({
     name: '',
     typ: 'standard',
@@ -56,6 +59,7 @@ export default function AusschuessProPeriode() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
+      setError('')
       const payload = {
         name: formData.name,
         typ: 'standard',
@@ -63,7 +67,6 @@ export default function AusschuessProPeriode() {
         aktiv: true,
         mitglieder: []
       }
-      // Add periode_id as query param
       await api.post('/committees', payload, {
         params: { periode_id: selectedPeriodId }
       })
@@ -75,31 +78,90 @@ export default function AusschuessProPeriode() {
     }
   }
 
+  const handleCopyFromPeriod = async (e) => {
+    e.preventDefault()
+    if (!copySourcePeriodId || !selectedPeriodId) return
+    try {
+      setError('')
+      setSuccess('')
+      const sourceRes = await api.get('/committees', {
+        params: { periode_id: copySourcePeriodId }
+      })
+      const sourceList = sourceRes.data || []
+      if (sourceList.length === 0) {
+        setError('Quell-Periode hat keine Ausschüsse')
+        return
+      }
+      let copied = 0
+      let skipped = 0
+      for (const src of sourceList) {
+        try {
+          await api.post(`/committees/${src.id}/copy-to-period`, null, {
+            params: { target_periode_id: selectedPeriodId }
+          })
+          copied += 1
+        } catch (err) {
+          if (err.response?.status === 409) {
+            skipped += 1
+          } else {
+            throw err
+          }
+        }
+      }
+      setSuccess(
+        `${copied} Ausschuss/Ausschüsse kopiert (ohne Mitgliedschaften)` +
+        (skipped ? `, ${skipped} übersprungen (bereits vorhanden)` : '') +
+        '. Bitte Mitglieder neu zuweisen.'
+      )
+      setShowCopy(false)
+      setCopySourcePeriodId(null)
+      fetchAusschuesse()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Kopieren fehlgeschlagen')
+    }
+  }
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Ausschuss wirklich löschen?')) return
+    try {
+      await api.delete(`/committees/${id}`)
+      fetchAusschuesse()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Löschen fehlgeschlagen')
+    }
+  }
+
   const handleCancel = () => {
     setShowForm(false)
     setFormData({ name: '', typ: 'standard' })
   }
 
   const currentPeriod = perioden.find(p => p.id === selectedPeriodId)
+  const otherPeriods = perioden.filter(p => p.id !== selectedPeriodId)
 
   return (
     <>
       {error && <div className="alert alert-danger">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
 
       <div className="section-header">
         <div>
           <h2>Ausschüsse pro Gemeinderatsperiode</h2>
-          <p style={{ marginTop: '0.5rem', color: '#666', fontSize: '0.9rem' }}>
-            Jede Periode hat die gleichen Ausschüsse für alle Jahre (Mitglieder können sich ändern)
+          <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted, #666)', fontSize: '0.9rem' }}>
+            Jede Periode hat eigene Ausschuss-Instanzen. Beim Kopieren werden keine Mitgliedschaften übernommen.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          + Neuer Ausschuss
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn btn-secondary" onClick={() => setShowCopy(true)} disabled={!selectedPeriodId || otherPeriods.length === 0}>
+            Für Periode kopieren
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+            + Neuer Ausschuss
+          </button>
+        </div>
       </div>
 
-      {/* Periode Selector */}
-      <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f3f4f6', borderRadius: '4px' }}>
+      <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--color-surface-muted, #f3f4f6)', borderRadius: '4px' }}>
         <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
           Gemeinderatsperiode:
         </label>
@@ -123,6 +185,37 @@ export default function AusschuessProPeriode() {
         </select>
       </div>
 
+      {showCopy && (
+        <form className="admin-form" onSubmit={handleCopyFromPeriod}>
+          <h3>Ausschüsse nach {currentPeriod?.name} kopieren</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted, #666)', marginBottom: '1rem' }}>
+            Kopiert Name und Typ. Mitgliedschaften bleiben leer und müssen neu gesetzt werden.
+          </p>
+          <label style={{ fontWeight: '600', display: 'block', marginBottom: '0.5rem' }}>
+            Quell-Periode:
+          </label>
+          <select
+            value={copySourcePeriodId || ''}
+            onChange={(e) => setCopySourcePeriodId(parseInt(e.target.value))}
+            required
+            style={{ padding: '0.5rem', marginBottom: '1rem', maxWidth: '400px', width: '100%' }}
+          >
+            <option value="">— wählen —</option>
+            {otherPeriods.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.start_jahr}-{p.end_jahr})
+              </option>
+            ))}
+          </select>
+          <div className="form-buttons">
+            <button type="submit" className="btn btn-success">Kopieren</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowCopy(false); setCopySourcePeriodId(null) }}>
+              Abbrechen
+            </button>
+          </div>
+        </form>
+      )}
+
       {showForm && (
         <form className="admin-form" onSubmit={handleSubmit}>
           <h3>Neuer Ausschuss für Periode {currentPeriod?.name}</h3>
@@ -135,16 +228,9 @@ export default function AusschuessProPeriode() {
               required
             />
           </div>
-          <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1rem' }}>
-            Dieser Ausschuss wird für alle 5 Jahre dieser Periode ({currentPeriod?.start_jahr}-{currentPeriod?.end_jahr}) hinzugefügt.
-          </p>
           <div className="form-buttons">
-            <button type="submit" className="btn btn-success">
-              Erstellen
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={handleCancel}>
-              Abbrechen
-            </button>
+            <button type="submit" className="btn btn-success">Erstellen</button>
+            <button type="button" className="btn btn-secondary" onClick={handleCancel}>Abbrechen</button>
           </div>
         </form>
       )}
@@ -153,8 +239,7 @@ export default function AusschuessProPeriode() {
         <p>Lädt...</p>
       ) : ausschuesse.length === 0 ? (
         <div className="alert alert-info">
-          <p>Keine Ausschüsse in {currentPeriod?.name}.
-            <a href="#" onClick={(e) => { e.preventDefault(); setShowForm(true); }}> Erstelle einen neuen</a>.</p>
+          <p>Keine Ausschüsse in {currentPeriod?.name}. Erstellen oder aus anderer Periode kopieren.</p>
         </div>
       ) : (
         <div className="table-responsive">
@@ -165,6 +250,7 @@ export default function AusschuessProPeriode() {
                 <th>Typ</th>
                 <th>Mitglieder</th>
                 <th>Status</th>
+                <th>Aktionen</th>
               </tr>
             </thead>
             <tbody>
@@ -173,7 +259,12 @@ export default function AusschuessProPeriode() {
                   <td>{ausschuss.name}</td>
                   <td>{ausschuss.typ}</td>
                   <td>{ausschuss.mitglieder?.length || 0}</td>
-                  <td>{ausschuss.aktiv ? '✅' : '❌'}</td>
+                  <td>{ausschuss.aktiv ? 'Aktiv' : 'Inaktiv'}</td>
+                  <td className="actions">
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(ausschuss.id)}>
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
