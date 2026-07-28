@@ -314,7 +314,7 @@ def test_set_password_invalid_token(client):
 def test_set_password_expired_token(client, db_session):
     """Test: Set-Password mit abgelaufenem Token schlägt fehl."""
     from app.models.models import Person
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     person = Person(
         vorname="Test",

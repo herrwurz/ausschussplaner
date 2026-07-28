@@ -38,12 +38,13 @@ export default function AdminPanel() {
   }
 
   const pathToTab = (pathname) => {
-    const entry = Object.entries(TAB_PATHS).find(([, path]) => pathname.includes(path.replace('/admin/', '')))
     if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'personen'
     for (const [tab, path] of Object.entries(TAB_PATHS)) {
-      if (pathname === path || pathname.endsWith(path.split('/').pop())) return tab
+      if (pathname === path || pathname.endsWith(`/${path.split('/').pop()}`)) {
+        return tab
+      }
     }
-    return entry ? entry[0] : 'personen'
+    return 'personen'
   }
 
   useEffect(() => {
