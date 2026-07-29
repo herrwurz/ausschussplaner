@@ -1,0 +1,13 @@
+---
+description: Security-Grundlagen bei Code-Änderungen
+globs: app/**/*,frontend/**/*,tests/**/*
+alwaysApply: false
+---
+
+# Security
+
+- OWASP-typische Risiken prüfen: Injection, unsichere Auth, Hardcoded Secrets, fehlende Input-Validierung.
+- Keine Secrets in Code oder Commits; `.env` nur als Beispiel.
+- API: JWT/Berechtigungen konsistent mit `app/core/security.py` und `app/api/deps.py`.
+- SQLAlchemy: parametrisierte Queries; keine String-Konkatenation für SQL.
+- Frontend: Token nur wie im Projekt üblich (localStorage + Bearer); XSS in User-Input vermeiden.

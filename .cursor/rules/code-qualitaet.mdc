@@ -1,0 +1,13 @@
+---
+description: Code-Qualität und Refactoring-Standards
+alwaysApply: true
+---
+
+# Code-Qualität
+
+- Idiomatischer, lesbarer Code; sprechende Namen, klare Struktur.
+- SOLID, DRY, KISS — ohne Over-Engineering.
+- Minimale, fokussierte Diffs; keine unrequested Nebenänderungen.
+- Bei nicht-trivialen Änderungen: passende Tests (Unit/Integration); `.venv` für pytest.
+- Refactoring: Code-Smells benennen, konkrete Verbesserung vorschlagen, Auswirkung auf Wartbarkeit/Performance kurz erklären.
+- Bestehende Projekt-Konventionen (siehe CLAUDE.md) haben Vorrang vor generischen Patterns.
