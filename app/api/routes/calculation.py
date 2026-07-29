@@ -1,15 +1,22 @@
 """API-Routen für Terminberechnung und Analyse."""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.schemas.schemas import BerechnungRequest, BerechnungResponse, SitzungsvorschlagOut
 from app.services.calculation_service import run_calculation, save_calculation_results
 
-router = APIRouter(prefix="/calculate", tags=["Berechnung"])
+router = APIRouter(
+    prefix="/calculate",
+    tags=["Berechnung"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 @router.post("", response_model=BerechnungResponse)
@@ -36,6 +43,7 @@ class SitzungsvorschlagCreate(BaseModel):
     wochentag: str
     start_minute: int
     end_minute: int
+    planungs_start_datum: date | None = None
 
 
 @router.post("/results", response_model=SitzungsvorschlagOut, status_code=status.HTTP_201_CREATED)
@@ -58,6 +66,7 @@ def create_sitzungsvorschlag(payload: SitzungsvorschlagCreate, db: Session = Dep
             stv_da=False,
             status=TerminStatus.TOP,
             fehlende='',
+            planungs_start_datum=payload.planungs_start_datum,
         )
         db.add(vorschlag)
         db.commit()

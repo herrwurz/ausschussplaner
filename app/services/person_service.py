@@ -47,14 +47,19 @@ def transfer_agenda(db: Session, payload: AgendaTransfer) -> AgendaTransferResul
 
     verf_kopiert = False
     if payload.verfuegbarkeit_uebernehmen:
+        # Perioden-bewusst: Ziel-Einträge je Scope ersetzen, periode_id mitkopieren
         db.query(Verfuegbarkeit).filter(Verfuegbarkeit.person_id == zu.id).delete()
         quell_verf = db.scalars(
             select(Verfuegbarkeit).where(Verfuegbarkeit.person_id == von.id)
         ).all()
         for v in quell_verf:
             db.add(Verfuegbarkeit(
-                person_id=zu.id, wochentag=v.wochentag,
-                stunde=v.stunde, verfuegbar=v.verfuegbar))
+                person_id=zu.id,
+                periode_id=v.periode_id,
+                wochentag=v.wochentag,
+                stunde=v.stunde,
+                verfuegbar=v.verfuegbar,
+            ))
         verf_kopiert = True
 
     if payload.quelle_deaktivieren:

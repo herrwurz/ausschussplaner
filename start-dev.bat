@@ -19,6 +19,7 @@ if not exist ".venv" (
 
 echo Running database migrations (idempotent)...
 .venv\Scripts\python.exe migrate_verfuegbarkeit_periode.py
+.venv\Scripts\python.exe migrate_sitzungsvorschlag_planungs_start.py
 
 echo Starting Backend Server (FastAPI)...
 start "AusschussPlaner Backend" cmd /k ^

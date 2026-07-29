@@ -140,6 +140,7 @@ class MitgliedOut(BaseModel):
 class AusschussOut(AusschussBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    periode_id: int | None = None
     mitglieder: list[MitgliedOut] = []
 
 
@@ -289,3 +290,4 @@ class SitzungsvorschlagOut(BaseModel):
     stv_da: bool
     status: TerminStatus
     fehlende: str
+    planungs_start_datum: date | None = None

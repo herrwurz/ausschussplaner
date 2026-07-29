@@ -6,9 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.models import (
     Jahresplan,
-    Person,
     Sitzungsregel,
-    Verfuegbarkeit,
 )
 from app.schemas.schemas import JahresplanCopy, JahresplanCopyResult
 
@@ -26,13 +24,12 @@ def create_jahresplan(db: Session, jahr: int, bezeichnung: str = "") -> Jahrespl
 
 
 def copy_jahresplan(db: Session, payload: JahresplanCopy) -> JahresplanCopyResult:
-    """Kopiert relevante Stammdaten vom Quell- ins Zieljahr.
+    """Legt einen Jahresplan für das Zieljahr an (falls nötig).
 
-    Konkret: optionale Übernahme der Verfügbarkeiten aller (aktiven) Personen
-    und der globalen Sitzungsregel. Ein neuer Jahresplan-Eintrag für das Zieljahr
-    wird angelegt (falls noch nicht vorhanden).
+    Verfügbarkeiten sind personenbezogen bzw. perioden-spezifisch — ein
+    jahr-basiertes Kopieren ist hier nicht sinnvoll und wird bewusst nicht
+    als Erfolgsfall gemeldet (personen_uebernommen=0).
     """
-    # Zieljahr-Plan anlegen oder vorhandenen zurückgeben
     existing = db.scalars(
         select(Jahresplan).where(Jahresplan.jahr == payload.ziel_jahr)
     ).first()
@@ -41,27 +38,8 @@ def copy_jahresplan(db: Session, payload: JahresplanCopy) -> JahresplanCopyResul
         db.add(existing)
         db.flush()
 
-    persons_copied = 0
-
-    if payload.uebernehme_verfuegbarkeiten:
-        stmt = select(Person)
-        if payload.schliesse_inaktive_aus:
-            stmt = stmt.where(Person.aktiv.is_(True))
-        persons = db.scalars(stmt).all()
-
-        for person in persons:
-            # Verfügbarkeiten bleiben personenbezogen (nicht jahresspezifisch),
-            # daher wird hier nur sichergestellt, dass die Person existiert.
-            # In einer echten Jahresplan-Implementierung würde man eine
-            # jahresspezifische Verfügbarkeitstabelle nutzen. Hier: no-op,
-            # da die Verfügbarkeit bereits persistent ist.
-            persons_copied += 1
-
-    regel_kopiert = False
-    if payload.uebernehme_regeln:
-        # Sitzungsregel ist ein Singleton – bleibt erhalten, nichts zu kopieren
-        regel = db.get(Sitzungsregel, 1)
-        regel_kopiert = regel is not None
+    # Sitzungsregel ist Singleton — nichts zu kopieren
+    regel = db.get(Sitzungsregel, 1) if payload.uebernehme_regeln else None
 
     db.commit()
     db.refresh(existing)
@@ -69,6 +47,6 @@ def copy_jahresplan(db: Session, payload: JahresplanCopy) -> JahresplanCopyResul
     return JahresplanCopyResult(
         jahresplan_id=existing.id,
         ziel_jahr=existing.jahr,
-        personen_uebernommen=persons_copied,
-        regel_kopiert=regel_kopiert,
+        personen_uebernommen=0,
+        regel_kopiert=regel is not None,
     )

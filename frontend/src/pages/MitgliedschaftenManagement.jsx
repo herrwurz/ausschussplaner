@@ -13,7 +13,11 @@ export default function MitgliedschaftenManagement() {
   const [editingAusschussId, setEditingAusschussId] = useState(null)
   const [editingRolle, setEditingRolle] = useState('')
 
-  const rollen = ['Obmann', 'Obmann-Stellvertreter', 'Mitglied']
+  const rollen = [
+    { value: 'Obmann', label: 'Obmann' },
+    { value: 'Obmann Stellvertreter', label: 'Obmann-Stellvertreter' },
+    { value: 'Mitglied', label: 'Mitglied' },
+  ]
 
   useEffect(() => {
     fetchPerioden()
@@ -226,8 +230,8 @@ export default function MitgliedschaftenManagement() {
                               }}
                             >
                               {rollen.map((rolle) => (
-                                <option key={rolle} value={rolle}>
-                                  {rolle}
+                                <option key={rolle.value} value={rolle.value}>
+                                  {rolle.label}
                                 </option>
                               ))}
                             </select>

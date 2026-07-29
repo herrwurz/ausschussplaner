@@ -79,6 +79,7 @@ export default function Terminberechnung() {
 
       const payload = {
         ausschuss_ids: selectedAusschussIds.length > 0 ? selectedAusschussIds : null,
+        periode_id: selectedPeriodeId,
         planungswochen,
         freitag_modus: freitagModus,
         max_alternativen: maxAnzahlTermine,
@@ -409,6 +410,7 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
         wochentag: termin.wochentag,
         start_minute: startMin,
         end_minute: endMin,
+        planungs_start_datum: results.start_datum || null,
       }
       console.log('Fixieren Payload:', payload)
 
@@ -453,20 +455,14 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
     })
   }
 
-  // Generiere 14-Tage-Kalender aus Ergebnissen
+  // Generiere Kalenderwochen aus Ergebnissen (Anzahl = planungswochen)
   const generierteKalendarwochen = () => {
-    console.log('DEBUG: generierteKalendarwochen aufgerufen')
-    console.log('DEBUG: results.analysen count:', results.analysen?.length)
-    console.log('DEBUG: Fixierte Termine beim Kalender-Gen:', fixierteTermine)
-    if (results.analysen && results.analysen[0]) {
-      console.log('DEBUG: First analyse top_termine:', results.analysen[0].top_termine?.length)
-    }
-
     const wochen = []
     const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr']
     const analysen = results.analysen || []
+    const anzahlWochen = results.planungswochen || 2
 
-    for (let w = 1; w <= 2; w++) {
+    for (let w = 1; w <= anzahlWochen; w++) {
       const woche = {
         woche: w,
         tage: {}
@@ -476,20 +472,13 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
       }
 
       for (const analyse of analysen) {
-        // Nutze beste_je_tag (global assigned) - aber nur TOP-Termin (erste Option) pro Ausschuss
+        // Nutze beste_je_tag (global assigned) - nur TOP-Termin (erste Option) pro Ausschuss
         const allTermine = analyse.beste_je_tag || []
-
-        // NUR TOP-Termin (erstes Element) im Kalender anzeigen
         const topTermin = allTermine[0]
         if (!topTermin) continue
-
-        console.log(`DEBUG KALENDER: ${analyse.ausschuss_name} - topTermin.woche=${topTermin.woche}, current w=${w}, all best_je_tag count=${allTermine.length}`)
-
-        // Wichtig: Vergleiche Numbers, nicht Strings
         if (Number(topTermin.woche) !== w) continue
 
         const v = topTermin
-        // Normalisiere wochentag: "Mo", "Di", "Mi", "Do", "Fr"
         let wochentag = v.wochentag || ''
         if (wochentag.includes('Mo')) wochentag = 'Mo'
         else if (wochentag.includes('Di')) wochentag = 'Di'
@@ -512,19 +501,11 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
           wochentag: wochentag,
         }
 
-        // Nur zeigen wenn KEINE Überschneidung mit fixiertem Termin
         if (!hatUeberschneidung(termin) && woche.tage[wochentag]) {
           woche.tage[wochentag].push(termin)
         }
       }
       wochen.push(woche)
-    }
-
-    console.log('DEBUG: wochen array count:', wochen.length)
-    for (let i = 0; i < wochen.length; i++) {
-      const w = wochen[i]
-      const tageCount = Object.values(w.tage).reduce((sum, tage) => sum + tage.length, 0)
-      console.log(`DEBUG: Woche ${w.woche}: ${tageCount} Termine`)
     }
 
     return wochen
@@ -535,11 +516,22 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
   return (
     <>
       <div className="section-header">
-        <h2>📅 14-Tage Terminkalender</h2>
+        <h2>Terminkalender ({results.planungswochen || 2} Wochen)</h2>
         <button className="btn btn-secondary" onClick={onBack}>
           ← Zurück
         </button>
       </div>
+
+      {results.zusammenfassung?.konflikte?.length > 0 && (
+        <div className="alert alert-warning">
+          <strong>Konflikte bei der Zuweisung:</strong>
+          <ul style={{ marginBottom: 0 }}>
+            {results.zusammenfassung.konflikte.map((k, i) => (
+              <li key={i}>{k}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {message && (
         <div style={{
@@ -735,7 +727,7 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
             <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Alternativen</div>
           </div>
           <div style={{ flex: 1, minWidth: '120px', padding: '1rem', background: 'white', borderRadius: '6px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#7c3aed' }}>{fixierteTermine?.length || 0}</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--color-primary, #1e3a8a)' }}>{fixierteTermine?.length || 0}</div>
             <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Fixiert</div>
           </div>
         </div>
