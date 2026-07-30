@@ -222,6 +222,49 @@ def get_my_sitzungen(person: Person = Depends(get_current_person), db: Session =
     return [SitzungsvorschlagOut.model_validate(r) for r in rows]
 
 
+@router.get("/me/sitzungen.pdf")
+def export_my_sitzungen_pdf(person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
+    """PDF der eigenen fixierten Sitzungen (für späteres Person-Portal)."""
+    from datetime import date as date_cls
+
+    from fastapi.responses import Response
+
+    from app.models.models import Sitzungsvorschlag
+    from app.services.pdf_service import (
+        build_wochenplan_pdf,
+        load_ausschuss_namen,
+        vorschlaege_to_plan,
+    )
+
+    ausschuss_ids = [
+        m.ausschuss_id
+        for m in db.query(Mitgliedschaft).filter(Mitgliedschaft.person_id == person.id).all()
+    ]
+    rows = []
+    if ausschuss_ids:
+        rows = (
+            db.query(Sitzungsvorschlag)
+            .filter(Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids))
+            .order_by(Sitzungsvorschlag.woche, Sitzungsvorschlag.wochentag, Sitzungsvorschlag.start_minute)
+            .all()
+        )
+    namen = load_ausschuss_namen(db, {r.ausschuss_id for r in rows})
+    anchors = {r.planungs_start_datum for r in rows if r.planungs_start_datum}
+    start = next(iter(anchors)) if len(anchors) == 1 else None
+    pdf = build_wochenplan_pdf(
+        vorschlaege_to_plan(rows, namen),
+        titel=f"Meine Sitzungen – {person.vorname} {person.nachname}",
+        untertitel=f"Planungsstart: {start.strftime('%d.%m.%Y')}" if start else None,
+        start_datum=start,
+    )
+    filename = f"meine_sitzungen_{date_cls.today().isoformat()}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/me/dashboard")
 def get_dashboard(person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
     """Dashboard Stats für die aktuelle Person."""

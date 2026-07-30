@@ -309,16 +309,21 @@ Verfügbarkeiten im ersten Ausschuss und verhinderte dort jeden 100%-Termin
 |--------|-------|
 | `create_admin.py` | Admin-User anlegen / Passwort zurücksetzen (läuft in setup-dev.bat) |
 | `migrate_verfuegbarkeit_periode.py` | DB-Migration periode_id (idempotent + reparaturfähig; läuft in start-dev.bat) |
+| `migrate_sitzungsvorschlag_planungs_start.py` | Spalte `planungs_start_datum` (idempotent; läuft in start-dev.bat) |
 | `sync_verfuegbarkeiten.py [--fix]` | DB-Verfügbarkeiten mit realdata.json abgleichen/korrigieren |
 | `analyse_ausschuss.py <Name> [docx]` | Diagnose: Mitglieder, Verfügbarkeiten, Engine-Ergebnis je Ausschuss |
-| `delete_testperson.py` | Seed-'Test Person' vollständig entfernen (einmalig) |
 
 ## Bekannte offene Punkte
 
 - **Sitzungsvorschlag-Persistenz:** `zusammenfassung.gespeicherte_vorschlaege` nicht implementiert; Fixierung nur manuell via POST /api/calculate/results
-- **Fixierte Termine:** fließen NICHT in die Konfliktvermeidung der Neuberechnung ein (nur Anzeige im Frontend)
-- **Sitzungsregel:** `block_minuten` und `max_ausschuesse_pro_tag` werden von der Engine nicht ausgewertet (Slots hart 90 min)
-- **Konfliktprüfung:** pauschal (Zeitüberlappung), unabhängig von gemeinsamen Mitgliedern
-- **Email-Service (fastapi-mail):** Dependency noch nicht zuverlässig in Docker, Invitations nur im Code-Path
+- **Sitzungsregel:** `block_minuten` wird von der Engine nicht ausgewertet (Slots hart 90 min); `max_ausschuesse_pro_tag` wird ausgewertet
+- **Email-Service / Person-Einladungen (Warteliste):** vorerst nur Admin-Betrieb; fastapi-mail in Docker und Portal-Zugang später
 - **Token-Expiry:** JWT nur 24h, Refresh-Token noch nicht implementiert
-- **Alembic:** alembic.ini existiert, aber kein Migrations-Setup — Schema-Änderungen laufen als Root-Skripte
+- **Alembic (Warteliste):** alembic.ini existiert, aber kein Migrations-Setup — Schema-Änderungen laufen als Root-Skripte
+
+### Erledigt (nicht mehr offen)
+- Fixierte Termine fließen mitgliederbezogen in die Konfliktvermeidung ein
+- Konfliktprüfung berücksichtigt gemeinsame Mitglieder (keine pauschale Hard-Blockade bei leerer Besetzung)
+- PDF-Wochenplan, PDF-Formulare Verfügbarkeit/Abwesenheit, ICS-Export
+- `planungs_start_datum` für absolute Datumsanzeige im Person-Kalender
+- `realdata.json` als Quelle der Wahrheit für Standardverfügbarkeiten (Seed + start-dev Sync)

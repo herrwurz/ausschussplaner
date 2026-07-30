@@ -14,6 +14,7 @@ from app.api.routes import (
     auth,
     calculation,
     committees,
+    export,
     jahresplan,
     obmann,
     perioden,
@@ -116,6 +117,7 @@ app.include_router(committees.router, prefix="/api")
 app.include_router(absences.router, prefix="/api")
 app.include_router(rules.router, prefix="/api")
 app.include_router(calculation.router, prefix="/api")
+app.include_router(export.router, prefix="/api")
 app.include_router(jahresplan.router, prefix="/api")
 app.include_router(perioden.router, prefix="/api")
 app.include_router(person.router, prefix="/api")
