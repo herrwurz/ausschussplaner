@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.base import get_db
-from app.models.enums import BenutzerRolle
-from app.models.models import Ausschuss, Mitgliedschaft, User
+from app.models.enums import BenutzerRolle, Rolle
+from app.models.models import Ausschuss, Mitgliedschaft, Person, User
 from app.schemas.schemas import BerechnungRequest
 from app.services.calculation_service import run_calculation
 
@@ -27,17 +27,37 @@ def get_current_obmann(user: User = Depends(get_current_user)) -> User:
 def erlaubte_ausschuss_ids(obmann: User, db: Session) -> set[int]:
     """IDs der Ausschüsse, die der Benutzer verwalten darf.
 
-    SUPER_ADMIN darf alle aktiven Ausschüsse, ein Obmann nur die ihm in
-    `User.obmann_ausschuss_ids` (JSON-Liste) zugewiesenen.
+    SUPER_ADMIN: alle aktiven Ausschüsse.
+    Obmann: explizite `obmann_ausschuss_ids` plus Ausschüsse, in denen die
+    Person mit gleicher E-Mail als Obmann / Obmann-Stv. eingetragen ist.
     """
     if obmann.rolle == BenutzerRolle.SUPER_ADMIN:
         rows = db.query(Ausschuss.id).filter(Ausschuss.aktiv == True).all()  # noqa: E712
         return {r[0] for r in rows}
+
+    ids: set[int] = set()
     try:
-        ids = json.loads(obmann.obmann_ausschuss_ids or "[]")
-        return {int(i) for i in ids}
-    except (TypeError, ValueError):
-        return set()
+        ids |= {int(i) for i in json.loads(obmann.obmann_ausschuss_ids or "[]")}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+
+    person = (
+        db.query(Person)
+        .filter(Person.email == obmann.email, Person.aktiv == True)  # noqa: E712
+        .first()
+    )
+    if person:
+        rows = (
+            db.query(Mitgliedschaft.ausschuss_id)
+            .filter(
+                Mitgliedschaft.person_id == person.id,
+                Mitgliedschaft.rolle.in_([Rolle.OBMANN, Rolle.OBMANN_STELLVERTRETER]),
+            )
+            .all()
+        )
+        ids |= {r[0] for r in rows}
+
+    return ids
 
 
 @router.get("/ausschuesse")
@@ -47,6 +67,9 @@ def get_obmann_ausschuesse(
 ):
     """Hole alle Ausschüsse, bei denen der aktuelle Benutzer Obmann ist."""
     ids = erlaubte_ausschuss_ids(obmann, db)
+    if not ids:
+        return []
+
     ausschuesse = (
         db.query(Ausschuss)
         .filter(Ausschuss.aktiv == True, Ausschuss.id.in_(ids))  # noqa: E712
@@ -73,6 +96,8 @@ def get_obmann_personen(
     from app.models.models import Person
 
     ausschuss_ids = erlaubte_ausschuss_ids(obmann, db)
+    if not ausschuss_ids:
+        return []
 
     # Hole alle Personen, die in diesen Ausschüssen Mitglied sind
     personen = (
@@ -99,10 +124,12 @@ def get_obmann_personen(
 @router.get("/personen/{person_id}/verfuegbarkeit")
 def get_obmann_person_verfuegbarkeit(
     person_id: int,
+    periode_id: int | None = None,
     obmann: User = Depends(get_current_obmann),
     db: Session = Depends(get_db),
 ):
-    """Hole Verfügbarkeit einer Person des Obmans."""
+    """Effektive Verfügbarkeit einer Person (Standard bzw. Perioden-Override)."""
+    from app.models.enums import Wochentag
     from app.models.models import Person, Verfuegbarkeit
 
     person = db.query(Person).filter(Person.id == person_id).first()
@@ -112,8 +139,13 @@ def get_obmann_person_verfuegbarkeit(
             detail="Person nicht gefunden",
         )
 
-    # Nur Personen aus den eigenen Ausschüssen des Obmans
     ids = erlaubte_ausschuss_ids(obmann, db)
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Keine Ausschüsse zugewiesen",
+        )
+
     ist_mitglied = (
         db.query(Mitgliedschaft)
         .filter(
@@ -128,27 +160,46 @@ def get_obmann_person_verfuegbarkeit(
             detail="Person gehört zu keinem Ausschuss dieses Obmans",
         )
 
-    verfuegbarkeiten = (
-        db.query(Verfuegbarkeit)
-        .filter(Verfuegbarkeit.person_id == person_id)
-        .all()
-    )
+    scope = []
+    if periode_id is not None:
+        scope = (
+            db.query(Verfuegbarkeit)
+            .filter(
+                Verfuegbarkeit.person_id == person_id,
+                Verfuegbarkeit.periode_id == periode_id,
+            )
+            .all()
+        )
+    if not scope:
+        scope = (
+            db.query(Verfuegbarkeit)
+            .filter(
+                Verfuegbarkeit.person_id == person_id,
+                Verfuegbarkeit.periode_id.is_(None),
+            )
+            .all()
+        )
 
-    # Gruppiere nach Wochentag
-    by_day = {}
-    for v in verfuegbarkeiten:
-        day = v.wochentag.value if v.wochentag else "unknown"
+    by_day: dict[str, list[dict]] = {d.value: [] for d in Wochentag}
+    for v in scope:
+        if not v.verfuegbar:
+            continue
+        day = v.wochentag.value if v.wochentag else None
         if day not in by_day:
-            by_day[day] = []
-        by_day[day].append({
-            "stunde": v.stunde,
-            "verfuegbar": v.verfuegbar,
-        })
+            continue
+        by_day[day].append({"stunde": v.stunde, "verfuegbar": True})
+    for day in by_day:
+        by_day[day].sort(key=lambda s: s["stunde"])
 
     return {
         "person_id": person_id,
         "name": f"{person.vorname} {person.nachname}",
         "verfuegbarkeiten": by_day,
+        "slots": [
+            {"wochentag": day, "stunde": s["stunde"], "verfuegbar": True}
+            for day, slots in by_day.items()
+            for s in slots
+        ],
     }
 
 
@@ -185,16 +236,37 @@ def calculate_ausschuss_termine(
             (a for a in result.analysen if a.ausschuss_id == ausschuss_id),
             None,
         )
-        slot_count = len(analyse.beste_je_tag) if analyse else 0
+
+        def _slot(v) -> dict:
+            return {
+                "woche": v.woche,
+                "wochentag": v.wochentag.value if hasattr(v.wochentag, "value") else str(v.wochentag),
+                "start": v.start,
+                "ende": v.ende,
+                "datum": v.datum.isoformat() if v.datum else None,
+                "quote": v.quote,
+                "status": v.status.value if hasattr(v.status, "value") else str(v.status),
+                "empfehlung": v.empfehlung,
+                "anwesend": v.anwesend,
+                "mitglieder": v.mitglieder,
+                "obmann_da": v.obmann_da,
+                "stv_da": v.stv_da,
+                "fehlende": v.fehlende or [],
+            }
+
+        vorschlaege = []
+        if analyse:
+            # Beste je Tag, sonst Top, sonst Beschlussfähig
+            quelle = analyse.beste_je_tag or analyse.top_termine or analyse.beschlussfaehig
+            vorschlaege = [_slot(v) for v in quelle[:12]]
 
         return {
             "success": True,
             "ausschuss_id": ausschuss_id,
             "ausschuss_name": ausschuss.name,
-            "results": {
-                "slot_count": slot_count,
-                "data": result,
-            },
+            "empfehlung_text": analyse.empfehlung_text if analyse else "",
+            "slot_count": len(vorschlaege),
+            "vorschlaege": vorschlaege,
         }
     except Exception as e:
         import traceback

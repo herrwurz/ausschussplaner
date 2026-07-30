@@ -335,18 +335,23 @@
 }
 
 .obmann-verfuegbarkeit-slot {
-  padding: var(--space-1) 0;
-  font-size: var(--font-size-xs);
+  display: inline-block;
+  min-width: 1.75rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.4;
 }
 
 .obmann-verfuegbarkeit-slot.available {
-  color: var(--color-success);
-  font-weight: var(--font-weight-semibold);
+  background: var(--color-success-light, #d1fae5);
+  color: var(--color-success, #065f46);
 }
 
 .obmann-verfuegbarkeit-slot.unavailable {
-  color: var(--color-danger);
+  background: var(--color-gray-100, #f3f4f6);
+  color: var(--color-gray-400, #9ca3af);
 }
 
 /* ──────────────────────────────────────────────────────────

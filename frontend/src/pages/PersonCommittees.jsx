@@ -1,72 +1,54 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
 import api from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 export default function PersonCommittees() {
   const [committees, setCommittees] = useState([])
   const [loading, setLoading] = useState(true)
-  const navigate = useNavigate()
 
   useEffect(() => {
-    const token = localStorage.getItem('personToken')
-    if (!token) {
-      navigate('/person/login')
-      return
-    }
-
     const fetchCommittees = async () => {
       try {
-        const res = await api.get('/person/me/committees', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        const res = await api.get('/person/me/committees')
         setCommittees(res.data)
-      } catch (err) {
-        if (err.response?.status === 401) {
-          navigate('/person/login')
-        }
+      } catch {
+        /* Auth via layout */
       } finally {
         setLoading(false)
       }
     }
     fetchCommittees()
-  }, [navigate])
+  }, [])
 
   if (loading) return <div className="alert alert-info">Lädt...</div>
 
   return (
-    <div className="container mt-5">
-      <Link to="/person/dashboard" className="btn btn-secondary mb-3">
-        ← Zurück zum Dashboard
-      </Link>
-      <h1>Meine Ausschüsse</h1>
+    <div>
+      <PageHeader title="Meine Ausschüsse" />
 
-      <table className="table table-striped">
-        <thead>
-          <tr>
-            <th>Ausschuss</th>
-            <th>Typ</th>
-            <th>Rolle</th>
-          </tr>
-        </thead>
-        <tbody>
-          {committees.map((c, idx) => (
-            <tr key={idx}>
-              <td>{c.ausschuss_name}</td>
-              <td>{c.typ}</td>
-              <td>
-                <span className="badge bg-primary">
-                  {c.rolle}
-                </span>
-              </td>
+      <div className="table-responsive">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Ausschuss</th>
+              <th>Typ</th>
+              <th>Rolle</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {committees.map((c, idx) => (
+              <tr key={idx}>
+                <td>{c.ausschuss_name}</td>
+                <td>{c.typ}</td>
+                <td><span className="badge bg-primary">{c.rolle}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {committees.length === 0 && (
-        <div className="alert alert-info">
-          Du bist noch in keinem Ausschuss Mitglied.
-        </div>
+        <div className="alert alert-info">Du bist noch in keinem Ausschuss Mitglied.</div>
       )}
     </div>
   )

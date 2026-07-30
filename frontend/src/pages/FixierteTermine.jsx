@@ -1,32 +1,20 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
+import { usePeriod } from '../contexts/PeriodContext'
+import PageHeader from '../components/PageHeader'
 
 export default function FixierteTermine() {
+  const { selectedPeriodeId, selectedPeriode } = usePeriod()
   const [termine, setTermine] = useState([])
   const [ausschuesse, setAusschuesse] = useState([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [perioden, setPerioden] = useState([])
-  const [selectedPeriodeId, setSelectedPeriodeId] = useState(null)
 
   useEffect(() => {
-    fetchPerioden()
     fetchAusschuesse()
   }, [])
-
-  const fetchPerioden = async () => {
-    try {
-      const res = await api.get('/perioden')
-      setPerioden(res.data)
-      if (res.data.length > 0) {
-        setSelectedPeriodeId(res.data[0].id)
-      }
-    } catch (err) {
-      setError('Perioden laden fehlgeschlagen')
-    }
-  }
 
   const fetchAusschuesse = async () => {
     try {
@@ -96,8 +84,6 @@ export default function FixierteTermine() {
     }
   }
 
-  const selectedPeriode = perioden.find(p => p.id === selectedPeriodeId)
-
   // Gruppiere Termine nach Woche und Tag
   const grupiertNachWoche = {}
   // Verwende alle Termine (auch mit 0/0, da manuell fixierte keine Mitgliederdaten haben)
@@ -132,9 +118,11 @@ export default function FixierteTermine() {
     <>
       {error && <div className="alert alert-danger">{error}</div>}
 
-      <div className="section-header">
-        <h2>📆 Fixierte Termine - Kalender</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <PageHeader
+        title="Fixierte Termine"
+        description={selectedPeriode ? `${selectedPeriode.name} · Kalenderansicht` : 'Periode in der Topbar wählen'}
+        actions={(
+          <>
         <button
           className="btn btn-primary"
           onClick={handlePdfExport}
@@ -168,8 +156,9 @@ export default function FixierteTermine() {
         >
           📅 ICS
         </button>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {message && (
         <div style={{
@@ -184,31 +173,6 @@ export default function FixierteTermine() {
           {message}
         </div>
       )}
-
-      {/* Periode Selector */}
-      <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f3f4f6', borderRadius: '4px' }}>
-        <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
-          Gemeinderatsperiode:
-        </label>
-        <select
-          value={selectedPeriodeId || ''}
-          onChange={(e) => setSelectedPeriodeId(parseInt(e.target.value))}
-          style={{
-            padding: '0.5rem',
-            border: '1px solid #d1d5db',
-            borderRadius: '4px',
-            fontSize: '0.95rem',
-            width: '100%',
-            maxWidth: '400px',
-          }}
-        >
-          {perioden.map((periode) => (
-            <option key={periode.id} value={periode.id}>
-              {periode.name} ({periode.start_jahr}–{periode.end_jahr})
-            </option>
-          ))}
-        </select>
-      </div>
 
       {loading ? (
         <p>Lädt...</p>

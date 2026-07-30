@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
+import { usePeriod } from '../contexts/PeriodContext'
+import PageHeader from '../components/PageHeader'
 
 export default function AusschuessProPeriode() {
-  const [perioden, setPerioden] = useState([])
-  const [selectedPeriodId, setSelectedPeriodId] = useState(null)
+  const { perioden, selectedPeriodeId: selectedPeriodId } = usePeriod()
   const [ausschuesse, setAusschuesse] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -15,26 +16,6 @@ export default function AusschuessProPeriode() {
     name: '',
     typ: 'standard',
   })
-
-  useEffect(() => {
-    fetchPerioden()
-  }, [])
-
-  const fetchPerioden = async () => {
-    try {
-      setLoading(true)
-      const res = await api.get('/perioden')
-      setPerioden(res.data)
-      if (res.data.length > 0) {
-        setSelectedPeriodId(res.data[0].id)
-      }
-    } catch (err) {
-      setError('Perioden laden fehlgeschlagen')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   useEffect(() => {
     if (selectedPeriodId) {
@@ -144,46 +125,20 @@ export default function AusschuessProPeriode() {
       {error && <div className="alert alert-danger">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
-      <div className="section-header">
-        <div>
-          <h2>Ausschüsse pro Gemeinderatsperiode</h2>
-          <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted, #666)', fontSize: '0.9rem' }}>
-            Jede Periode hat eigene Ausschuss-Instanzen. Beim Kopieren werden keine Mitgliedschaften übernommen.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="btn btn-secondary" onClick={() => setShowCopy(true)} disabled={!selectedPeriodId || otherPeriods.length === 0}>
-            Für Periode kopieren
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-            + Neuer Ausschuss
-          </button>
-        </div>
-      </div>
-
-      <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--color-surface-muted, #f3f4f6)', borderRadius: '4px' }}>
-        <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
-          Gemeinderatsperiode:
-        </label>
-        <select
-          value={selectedPeriodId || ''}
-          onChange={(e) => setSelectedPeriodId(parseInt(e.target.value))}
-          style={{
-            padding: '0.5rem',
-            border: '1px solid #d1d5db',
-            borderRadius: '4px',
-            fontSize: '0.95rem',
-            width: '100%',
-            maxWidth: '400px'
-          }}
-        >
-          {perioden.map((periode) => (
-            <option key={periode.id} value={periode.id}>
-              {periode.name} ({periode.start_jahr}-{periode.end_jahr})
-            </option>
-          ))}
-        </select>
-      </div>
+      <PageHeader
+        title="Ausschüsse pro Gemeinderatsperiode"
+        description="Jede Periode hat eigene Ausschuss-Instanzen. Beim Kopieren werden keine Mitgliedschaften übernommen. Periode oben in der Topbar wählen."
+        actions={(
+          <>
+            <button className="btn btn-secondary" onClick={() => setShowCopy(true)} disabled={!selectedPeriodId || otherPeriods.length === 0}>
+              Für Periode kopieren
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+              + Neuer Ausschuss
+            </button>
+          </>
+        )}
+      />
 
       {showCopy && (
         <form className="admin-form" onSubmit={handleCopyFromPeriod}>
@@ -247,17 +202,21 @@ export default function AusschuessProPeriode() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Typ</th>
+                <th>Obmann</th>
                 <th>Mitglieder</th>
                 <th>Status</th>
                 <th>Aktionen</th>
               </tr>
             </thead>
             <tbody>
-              {ausschuesse.map((ausschuss) => (
+              {ausschuesse.map((ausschuss) => {
+                const obmann = (ausschuss.mitglieder || []).find(
+                  (m) => m.rolle === 'Obmann',
+                )
+                return (
                 <tr key={ausschuss.id}>
                   <td>{ausschuss.name}</td>
-                  <td>{ausschuss.typ}</td>
+                  <td>{obmann?.name || '—'}</td>
                   <td>{ausschuss.mitglieder?.length || 0}</td>
                   <td>{ausschuss.aktiv ? 'Aktiv' : 'Inaktiv'}</td>
                   <td className="actions">
@@ -266,7 +225,8 @@ export default function AusschuessProPeriode() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

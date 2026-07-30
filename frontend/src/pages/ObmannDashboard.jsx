@@ -1,10 +1,148 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/client'
+import ObmannLayout from '../components/ObmannLayout'
 import '../styles/ObmannDashboard.css'
+
+function readUser() {
+  try {
+    return JSON.parse(localStorage.getItem('user') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function hourLabel(h) {
+  const hour = Number(h)
+  const hh = String(Math.floor(hour)).padStart(2, '0')
+  const mm = hour % 1 ? '30' : '00'
+  return `${hh}:${mm}`
+}
+
+const DAY_FULL = { Mo: 'Montag', Di: 'Dienstag', Mi: 'Mittwoch', Do: 'Donnerstag', Fr: 'Freitag' }
+const DAY_ORDER = ['Mo', 'Di', 'Mi', 'Do', 'Fr']
+const HOURS = [7, 16, 17, 18, 19]
+
+function statusLabel(status) {
+  const map = {
+    top: '100 %',
+    beschlussfähig: 'Beschlussfähig',
+    alternativ: 'Alternativ',
+    obmann_da: 'Nur Obmann',
+    nicht_beschlussfähig: 'Nicht beschlussfähig',
+  }
+  return map[status] || status
+}
+
+function BerechnungErgebnis({ result }) {
+  const vorschlaege = result?.vorschlaege || []
+  if (!vorschlaege.length) {
+    return (
+      <div className="obmann-results">
+        <p className="obmann-results-title">Keine Terminvorschläge gefunden</p>
+        {result?.empfehlung_text && (
+          <p className="obmann-card-meta">{result.empfehlung_text}</p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="obmann-results">
+      <p className="obmann-results-title">
+        {vorschlaege.length} Terminvorschlag{vorschlaege.length === 1 ? '' : 'e'}
+      </p>
+      {result?.empfehlung_text && (
+        <p className="obmann-card-meta" style={{ marginBottom: '0.75rem' }}>
+          {result.empfehlung_text}
+        </p>
+      )}
+      <div className="table-responsive">
+        <table className="admin-table" style={{ fontSize: '0.85rem' }}>
+          <thead>
+            <tr>
+              <th>Woche</th>
+              <th>Tag</th>
+              <th>Zeit</th>
+              <th>Quote</th>
+              <th>Status</th>
+              <th>Anwesend</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vorschlaege.map((v, idx) => (
+              <tr key={`${v.woche}-${v.wochentag}-${v.start}-${idx}`}>
+                <td>{v.woche}</td>
+                <td>{DAY_FULL[v.wochentag] || v.wochentag}</td>
+                <td>{v.start}–{v.ende}</td>
+                <td>{v.quote} %</td>
+                <td>{statusLabel(v.status)}</td>
+                <td>{v.anwesend}/{v.mitglieder}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function VerfuegbarkeitMatrix({ data }) {
+  const byDay = data?.verfuegbarkeiten || {}
+  const available = new Set()
+  DAY_ORDER.forEach((day) => {
+    ;(byDay[day] || []).forEach((s) => {
+      if (s.verfuegbar) available.add(`${day}-${Number(s.stunde)}`)
+    })
+  })
+  const hasAny = available.size > 0
+
+  if (!hasAny) {
+    return (
+      <p className="obmann-empty-state">
+        Für {data?.name || 'diese Person'} sind keine Standard-Verfügbarkeiten hinterlegt.
+      </p>
+    )
+  }
+
+  return (
+    <div className="table-responsive">
+      <table className="admin-table" style={{ maxWidth: 520, textAlign: 'center' }}>
+        <thead>
+          <tr>
+            <th>Tag</th>
+            {HOURS.map((h) => (
+              <th key={h}>{hourLabel(h)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {DAY_ORDER.map((day) => (
+            <tr key={day}>
+              <td style={{ textAlign: 'left', fontWeight: 600 }}>{DAY_FULL[day]}</td>
+              {HOURS.map((h) => {
+                const on = available.has(`${day}-${h}`)
+                return (
+                  <td key={h}>
+                    <span className={`obmann-verfuegbarkeit-slot ${on ? 'available' : 'unavailable'}`}>
+                      {on ? '✓' : '–'}
+                    </span>
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 export default function ObmannDashboard() {
   const navigate = useNavigate()
+  const userRef = useRef(readUser())
+  const user = userRef.current
+
   const [ausschuesse, setAusschuesse] = useState([])
   const [personen, setPersonen] = useState([])
   const [loading, setLoading] = useState(true)
@@ -15,69 +153,63 @@ export default function ObmannDashboard() {
   const [activeTab, setActiveTab] = useState('ausschuesse')
   const [selectedPerson, setSelectedPerson] = useState(null)
   const [personVerfuegbarkeit, setPersonVerfuegbarkeit] = useState(null)
-
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
-  const token = localStorage.getItem('token')
+  const [verfuegbarkeitLoading, setVerfuegbarkeitLoading] = useState(false)
 
   useEffect(() => {
-    const checkAuth = () => {
-      if (!token || !user.id) {
-        navigate('/admin/login')
-        return
-      }
-      if (user.rolle !== 'obmann') {
-        navigate('/admin')
-        return
-      }
-      fetchAusschuesse()
-      fetchPersonen()
-    }
-    checkAuth()
-  }, [token, user, navigate])
+    const token = localStorage.getItem('token')
+    const current = userRef.current
 
-  const fetchAusschuesse = async () => {
-    try {
-      console.log('🔍 Fetching Obmann Ausschüsse...')
-      console.log('Token:', token?.substring(0, 20) + '...')
-      const res = await api.get('/obmann/ausschuesse')
-      console.log('✅ Ausschüsse loaded:', res.data.length)
-      setAusschuesse(res.data)
-    } catch (err) {
-      console.error('❌ Error:', err)
-      console.error('Status:', err.response?.status)
-      console.error('Data:', err.response?.data)
-      setError(`Ausschüsse laden fehlgeschlagen: ${err.response?.status || err.message}`)
+    if (!token || !current.id) {
+      navigate('/admin/login', { replace: true })
+      return undefined
     }
-  }
+    if (current.rolle !== 'obmann' && current.rolle !== 'super_admin') {
+      navigate('/admin/panel', { replace: true })
+      return undefined
+    }
 
-  const fetchPersonen = async () => {
-    try {
-      setLoading(true)
-      console.log('🔍 Fetching Obmann Personen...')
-      const res = await api.get('/obmann/personen')
-      console.log('✅ Personen loaded:', res.data.length)
-      setPersonen(res.data)
-    } catch (err) {
-      console.error('❌ Error:', err)
-      console.error('Status:', err.response?.status)
-      console.error('Data:', err.response?.data)
-      setError(`Personen laden fehlgeschlagen: ${err.response?.status || err.message}`)
-    } finally {
-      setLoading(false)
+    const controller = new AbortController()
+
+    const load = async () => {
+      try {
+        const [ausRes, perRes] = await Promise.all([
+          api.get('/obmann/ausschuesse', { signal: controller.signal }),
+          api.get('/obmann/personen', { signal: controller.signal }),
+        ])
+        setAusschuesse(ausRes.data || [])
+        setPersonen(perRes.data || [])
+        setError('')
+      } catch (err) {
+        if (controller.signal.aborted || err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
+          return
+        }
+        setError(`Laden fehlgeschlagen: ${err.response?.status || err.message}`)
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
     }
-  }
+
+    load()
+    return () => controller.abort()
+    // Nur einmal beim Mount laden — keine deps, die Re-Fetches auslösen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const fetchPersonVerfuegbarkeit = async (personId) => {
+    setVerfuegbarkeitLoading(true)
+    setPersonVerfuegbarkeit(null)
+    setError('')
     try {
-      console.log(`🔍 Fetching Verfügbarkeit für Person ${personId}...`)
       const res = await api.get(`/obmann/personen/${personId}/verfuegbarkeit`)
-      console.log('✅ Verfügbarkeit loaded')
       setPersonVerfuegbarkeit(res.data)
     } catch (err) {
-      console.error('❌ Error:', err)
-      console.error('Status:', err.response?.status)
-      console.error('Data:', err.response?.data)
-      setError(`Verfügbarkeit laden fehlgeschlagen: ${err.response?.status || err.message}`)
+      setError(
+        `Verfügbarkeit laden fehlgeschlagen: ${err.response?.data?.detail || err.response?.status || err.message}`,
+      )
+    } finally {
+      setVerfuegbarkeitLoading(false)
     }
   }
 
@@ -85,21 +217,11 @@ export default function ObmannDashboard() {
     try {
       setCalculating(ausschussId)
       setError('')
-      console.log(`🔍 Berechne Termine für ${ausschussName}...`)
-
-      const res = await api.post(`/obmann/calculate/${ausschussId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      console.log('✅ Berechnung erfolgreich')
-      setResults(prev => ({
-        ...prev,
-        [ausschussId]: res.data.results
-      }))
-      setSuccess(`✅ Termine für "${ausschussName}" berechnet!`)
+      const res = await api.post(`/obmann/calculate/${ausschussId}`)
+      setResults((prev) => ({ ...prev, [ausschussId]: res.data }))
+      setSuccess(`Termine für "${ausschussName}" berechnet`)
       setTimeout(() => setSuccess(''), 5000)
     } catch (err) {
-      console.error('❌ Error:', err)
       setError(`Berechnung fehlgeschlagen: ${err.response?.data?.detail || err.message}`)
     } finally {
       setCalculating(null)
@@ -112,176 +234,155 @@ export default function ObmannDashboard() {
     navigate('/admin/login')
   }
 
-  if (loading) return (
-    <div className="obmann-loading">
-      <h2>⏳ Wird geladen...</h2>
-    </div>
-  )
+  const isSuperAdmin = user.rolle === 'super_admin'
 
   return (
-    <div className="obmann-container">
-      {/* Header */}
-      <header className="obmann-header">
-        <div>
-          <h1>Obmann-Dashboard</h1>
-          <p className="obmann-header-subtitle">👤 {user.vorname} {user.nachname}</p>
+    <ObmannLayout user={user} onLogout={handleLogout} showAdminLink={isSuperAdmin}>
+      {isSuperAdmin && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Link to="/admin/panel" className="btn btn-secondary">
+            ← Zurück zum Admin-Panel
+          </Link>
         </div>
-        <button onClick={handleLogout} className="obmann-logout-btn">
-          🚪 Logout
-        </button>
-      </header>
+      )}
 
-      <div className="obmann-content">
-        {error && (
-          <div className="obmann-alert obmann-alert-error">
-            <span>{error}</span>
-            <button onClick={() => setError('')} className="obmann-alert-close">✕</button>
-          </div>
-        )}
-
-        {success && (
-          <div className="obmann-alert obmann-alert-success">
-            <span>{success}</span>
-            <button onClick={() => setSuccess('')} className="obmann-alert-close">✕</button>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="obmann-tabs">
-          <button
-            onClick={() => setActiveTab('ausschuesse')}
-            className={`obmann-tab-btn ${activeTab === 'ausschuesse' ? 'active' : ''}`}
-          >
-            📋 Meine Ausschüsse ({ausschuesse.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('personen')}
-            className={`obmann-tab-btn ${activeTab === 'personen' ? 'active' : ''}`}
-          >
-            👥 Meine Personen ({personen.length})
-          </button>
+      {loading && (
+        <div className="obmann-loading">
+          <h2>Wird geladen...</h2>
         </div>
+      )}
 
-        {/* Ausschüsse Tab */}
-        {activeTab === 'ausschuesse' && (
-          <>
-            <div className="obmann-section-header">
-              <h2>Meine Ausschüsse</h2>
-            </div>
+      {!loading && error && (
+        <div className="obmann-alert obmann-alert-error">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError('')} className="obmann-alert-close">✕</button>
+        </div>
+      )}
 
-            {ausschuesse.length === 0 ? (
-              <p className="obmann-empty-state">Sie sind Obmann in keinem Ausschuss.</p>
-            ) : (
-              <div className="obmann-card-grid">
-                {ausschuesse.map((ausschuss) => (
-                  <div key={ausschuss.id} className="obmann-card">
-                    <h3 className="obmann-card-title">{ausschuss.name}</h3>
-                    <p className="obmann-card-meta">
-                      Typ: {ausschuss.typ === 'standard' ? '📋 Standard' : ausschuss.typ}
-                    </p>
-                    <p className="obmann-card-meta">
-                      Status: {ausschuss.aktiv ? '✅ Aktiv' : '⚠️ Inaktiv'}
-                    </p>
+      {!loading && success && (
+        <div className="obmann-alert obmann-alert-success">
+          <span>{success}</span>
+          <button type="button" onClick={() => setSuccess('')} className="obmann-alert-close">✕</button>
+        </div>
+      )}
 
-                    <button
-                      onClick={() => handleCalculate(ausschuss.id, ausschuss.name)}
-                      disabled={calculating === ausschuss.id}
-                      className="obmann-card-button"
-                    >
-                      {calculating === ausschuss.id ? '⏳ Berechnet...' : '📊 Termine berechnen'}
-                    </button>
+      {!loading && (
+        <>
+          <div className="obmann-tabs">
+            <button
+              type="button"
+              onClick={() => setActiveTab('ausschuesse')}
+              className={`obmann-tab-btn ${activeTab === 'ausschuesse' ? 'active' : ''}`}
+            >
+              Meine Ausschüsse ({ausschuesse.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('personen')}
+              className={`obmann-tab-btn ${activeTab === 'personen' ? 'active' : ''}`}
+            >
+              Meine Personen ({personen.length})
+            </button>
+          </div>
 
-                    {results[ausschuss.id] && (
-                      <div className="obmann-results">
-                        <p className="obmann-results-title">✅ Berechnung abgeschlossen</p>
-                        <pre className="obmann-results-content">
-                          {JSON.stringify(results[ausschuss.id], null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                ))}
+          {activeTab === 'ausschuesse' && (
+            <>
+              <div className="obmann-section-header">
+                <h2>Meine Ausschüsse</h2>
               </div>
-            )}
-          </>
-        )}
 
-        {/* Personen Tab */}
-        {activeTab === 'personen' && (
-          <>
-            <div className="obmann-section-header">
-              <h2>Meine Ausschussmitglieder</h2>
-            </div>
-            {personen.length === 0 ? (
-              <p className="obmann-empty-state">Sie haben keine Ausschussmitglieder.</p>
-            ) : (
-              <div className="obmann-card-grid">
-                {personen.map((person) => (
-                  <div
-                    key={person.id}
-                    className={`obmann-card ${selectedPerson?.id === person.id ? 'selected' : ''}`}
-                  >
-                    <h3 className="obmann-card-title">
-                      {person.vorname} {person.nachname}
-                    </h3>
-                    <p className="obmann-card-meta">📧 {person.email}</p>
-                    <p className="obmann-card-meta">🏛️ {person.gremium}</p>
-                    <p className="obmann-card-meta">
-                      Status: {person.aktiv ? '✅ Aktiv' : '⚠️ Inaktiv'}
-                    </p>
+              {ausschuesse.length === 0 ? (
+                <p className="obmann-empty-state">
+                  Keine Ausschüsse zugewiesen. Voraussetzung: Benutzer-E-Mail entspricht einer Person,
+                  die in Mitgliedschaften als Obmann / Obmann-Stv. eingetragen ist.
+                </p>
+              ) : (
+                <div className="obmann-card-grid">
+                  {ausschuesse.map((ausschuss) => (
+                    <div key={ausschuss.id} className="obmann-card">
+                      <h3 className="obmann-card-title">{ausschuss.name}</h3>
+                      <p className="obmann-card-meta">
+                        Typ: {ausschuss.typ === 'standard' ? 'Standard' : ausschuss.typ}
+                      </p>
+                      <p className="obmann-card-meta">
+                        Status: {ausschuss.aktiv ? 'Aktiv' : 'Inaktiv'}
+                      </p>
 
-                    <button
-                      onClick={() => {
-                        setSelectedPerson(person)
-                        fetchPersonVerfuegbarkeit(person.id)
-                      }}
-                      className={`obmann-card-button ${
-                        selectedPerson?.id === person.id ? 'active' : 'secondary'
-                      }`}
-                    >
-                      {selectedPerson?.id === person.id ? '✅ Verfügbarkeit zeigen' : '📅 Verfügbarkeit anzeigen'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <button
+                        type="button"
+                        onClick={() => handleCalculate(ausschuss.id, ausschuss.name)}
+                        disabled={calculating === ausschuss.id}
+                        className="obmann-card-button"
+                      >
+                        {calculating === ausschuss.id ? 'Berechnet...' : 'Termine berechnen'}
+                      </button>
 
-            {/* Verfügbarkeit Details */}
-            {personVerfuegbarkeit && (
-              <div className="obmann-verfuegbarkeit-section">
-                <h3 className="obmann-verfuegbarkeit-title">
-                  📅 Verfügbarkeit: {personVerfuegbarkeit.name}
-                </h3>
-                <div className="obmann-verfuegbarkeit-grid">
-                  {Object.entries(personVerfuegbarkeit.verfuegbarkeiten).map(([day, slots]) => (
-                    <div key={day} className="obmann-verfuegbarkeit-day">
-                      <h4 className="obmann-verfuegbarkeit-day-title">
-                        {day === 'monday' ? 'Montag' :
-                         day === 'tuesday' ? 'Dienstag' :
-                         day === 'wednesday' ? 'Mittwoch' :
-                         day === 'thursday' ? 'Donnerstag' :
-                         day === 'friday' ? 'Freitag' : day}
-                      </h4>
-                      <div>
-                        {slots.map((slot, idx) => (
-                          <div
-                            key={idx}
-                            className={`obmann-verfuegbarkeit-slot ${
-                              slot.verfuegbar ? 'available' : 'unavailable'
-                            }`}
-                          >
-                            {slot.stunde}:00 - {slot.verfuegbar ? '✅ Verfügbar' : '❌ Nicht verfügbar'}
-                          </div>
-                        ))}
-                      </div>
+                      {results[ausschuss.id] && (
+                        <BerechnungErgebnis result={results[ausschuss.id]} />
+                      )}
                     </div>
                   ))}
                 </div>
+              )}
+            </>
+          )}
+
+          {activeTab === 'personen' && (
+            <>
+              <div className="obmann-section-header">
+                <h2>Meine Ausschussmitglieder</h2>
               </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+              {personen.length === 0 ? (
+                <p className="obmann-empty-state">Sie haben keine Ausschussmitglieder.</p>
+              ) : (
+                <div className="obmann-card-grid">
+                  {personen.map((person) => (
+                    <div
+                      key={person.id}
+                      className={`obmann-card ${selectedPerson?.id === person.id ? 'selected' : ''}`}
+                    >
+                      <h3 className="obmann-card-title">
+                        {person.vorname} {person.nachname}
+                      </h3>
+                      <p className="obmann-card-meta">{person.email}</p>
+                      <p className="obmann-card-meta">{person.gremium}</p>
+                      <p className="obmann-card-meta">
+                        Status: {person.aktiv ? 'Aktiv' : 'Inaktiv'}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPerson(person)
+                          fetchPersonVerfuegbarkeit(person.id)
+                        }}
+                        className={`obmann-card-button ${
+                          selectedPerson?.id === person.id ? 'active' : 'secondary'
+                        }`}
+                      >
+                        {selectedPerson?.id === person.id ? 'Verfügbarkeit zeigen' : 'Verfügbarkeit anzeigen'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {verfuegbarkeitLoading && (
+                <p className="obmann-empty-state">Verfügbarkeit wird geladen…</p>
+              )}
+
+              {!verfuegbarkeitLoading && personVerfuegbarkeit && (
+                <div className="obmann-verfuegbarkeit-section">
+                  <h3 className="obmann-verfuegbarkeit-title">
+                    Verfügbarkeit: {personVerfuegbarkeit.name}
+                  </h3>
+                  <VerfuegbarkeitMatrix data={personVerfuegbarkeit} />
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </ObmannLayout>
   )
 }

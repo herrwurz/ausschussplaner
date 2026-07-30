@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 export default function PersonPassword() {
   const [form, setForm] = useState({ old_password: '', new_password: '', confirm_password: '' })
@@ -8,13 +9,6 @@ export default function PersonPassword() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const navigate = useNavigate()
-
-  useEffect(() => {
-    const token = localStorage.getItem('personToken')
-    if (!token) {
-      navigate('/person/login')
-    }
-  }, [navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -32,19 +26,11 @@ export default function PersonPassword() {
     }
 
     setSaving(true)
-    const token = localStorage.getItem('personToken')
-
     try {
-      await api.put(
-        '/person/me/password',
-        {
-          old_password: form.old_password,
-          new_password: form.new_password,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      )
+      await api.put('/person/me/password', {
+        old_password: form.old_password,
+        new_password: form.new_password,
+      })
       setMessage('Passwort erfolgreich geändert!')
       setForm({ old_password: '', new_password: '', confirm_password: '' })
       setTimeout(() => navigate('/person/dashboard'), 2000)
@@ -60,62 +46,42 @@ export default function PersonPassword() {
   }
 
   return (
-    <div className="container mt-5">
-      <Link to="/person/dashboard" className="btn btn-secondary mb-3">
-        ← Zurück zum Dashboard
-      </Link>
-      <div className="row">
-        <div className="col-md-6">
-          <h1>Passwort ändern</h1>
-
-          {error && <div className="alert alert-danger">{error}</div>}
-          {message && <div className="alert alert-success">{message}</div>}
-
-          <form onSubmit={handleSubmit} className="card p-4">
-            <div className="mb-3">
-              <label className="form-label">Aktuelles Passwort</label>
-              <input
-                type="password"
-                className="form-control"
-                value={form.old_password}
-                onChange={(e) => setForm({ ...form, old_password: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="mb-3">
-              <label className="form-label">Neues Passwort</label>
-              <input
-                type="password"
-                className="form-control"
-                value={form.new_password}
-                onChange={(e) => setForm({ ...form, new_password: e.target.value })}
-                placeholder="Mindestens 8 Zeichen"
-                required
-              />
-            </div>
-
-            <div className="mb-3">
-              <label className="form-label">Passwort wiederholen</label>
-              <input
-                type="password"
-                className="form-control"
-                value={form.confirm_password}
-                onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="btn btn-primary w-100"
-              disabled={saving}
-            >
-              {saving ? 'Speichert...' : 'Passwort ändern'}
-            </button>
-          </form>
+    <div>
+      <PageHeader title="Passwort ändern" />
+      {error && <div className="alert alert-danger">{error}</div>}
+      {message && <div className="alert alert-success">{message}</div>}
+      <form onSubmit={handleSubmit} className="admin-form" style={{ maxWidth: 480 }}>
+        <div className="form-group">
+          <label>Aktuelles Passwort</label>
+          <input
+            type="password"
+            value={form.old_password}
+            onChange={(e) => setForm({ ...form, old_password: e.target.value })}
+            required
+          />
         </div>
-      </div>
+        <div className="form-group">
+          <label>Neues Passwort</label>
+          <input
+            type="password"
+            value={form.new_password}
+            onChange={(e) => setForm({ ...form, new_password: e.target.value })}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Neues Passwort bestätigen</label>
+          <input
+            type="password"
+            value={form.confirm_password}
+            onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
+            required
+          />
+        </div>
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          {saving ? 'Speichert...' : 'Passwort ändern'}
+        </button>
+      </form>
     </div>
   )
 }
