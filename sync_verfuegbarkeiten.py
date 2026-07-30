@@ -10,8 +10,11 @@ Ausführung:
 --fix ersetzt die Standardverfügbarkeit der gematchten Personen komplett durch
 die JSON-Werte (nur volle Stunden 7/16/17/18/19; alte Halbstunden-Einträge
 werden entfernt — die Berechnung hat sie nie ausgewertet).
-Perioden-spezifische Einträge (periode_id gesetzt) bleiben unberührt.
+Zusätzlich werden perioden-spezifische Einträge gelöscht, damit die UI
+(effektiv=Periode) wieder auf den Standard (realdata) fällt.
 """
+from __future__ import annotations
+
 import json
 import sys
 from pathlib import Path
@@ -23,7 +26,6 @@ from app.db.base import engine
 JSON_PATH = Path(__file__).parent / "realdata.json"
 DAYS = ["Mo", "Di", "Mi", "Do", "Fr"]
 HOURS = [7, 16, 17, 18, 19]
-FIX = "--fix" in sys.argv
 
 
 def norm_name(*teile: str) -> frozenset[str]:
@@ -42,9 +44,12 @@ def json_matrix(eintrag: dict) -> set[tuple[str, int]]:
     return slots
 
 
-def main() -> None:
+def sync_verfuegbarkeiten(*, fix: bool = False) -> int:
+    """Abgleich mit realdata.json. Gibt die Anzahl Personen mit Abweichungen zurück."""
     if not JSON_PATH.exists():
-        raise SystemExit(f"FEHLER: {JSON_PATH} nicht gefunden - bitte realdata.json ins Projektverzeichnis kopieren.")
+        raise FileNotFoundError(
+            f"{JSON_PATH} nicht gefunden - bitte realdata.json ins Projektverzeichnis kopieren."
+        )
 
     daten = json.loads(JSON_PATH.read_text(encoding="utf-8"))
     json_personen = {norm_name(e["Name"]): e for e in daten}
@@ -78,6 +83,14 @@ def main() -> None:
 
     gesamt_diffs = 0
     with engine.begin() as conn:
+        if fix:
+            # Perioden-Overrides entfernen, sonst bleibt die Admin-UI auf alten Werten
+            geloescht = conn.execute(
+                text("DELETE FROM verfuegbarkeit WHERE periode_id IS NOT NULL")
+            ).rowcount
+            if geloescht:
+                print(f"Perioden-spezifische Eintraege entfernt: {geloescht}")
+
         for pid, name, eintrag in matched:
             soll = json_matrix(eintrag)
             rows = conn.execute(
@@ -87,7 +100,6 @@ def main() -> None:
                 ),
                 {"pid": pid},
             ).all()
-            # DB-Wochentage können als Enum-NAME ('MO') oder -WERT ('Mo') vorliegen
             name_map = {"MO": "Mo", "DI": "Di", "MI": "Mi", "DO": "Do", "FR": "Fr"}
             ist = {
                 (name_map.get(str(w), str(w)), int(s))
@@ -95,8 +107,8 @@ def main() -> None:
                 if float(s) == int(float(s)) and int(float(s)) in HOURS
             }
 
-            fehlt = sorted(soll - ist)   # laut JSON Ja, in DB nicht
-            zuviel = sorted(ist - soll)  # in DB Ja, laut JSON Nein
+            fehlt = sorted(soll - ist)
+            zuviel = sorted(ist - soll)
             if fehlt or zuviel:
                 gesamt_diffs += 1
                 print(f"{name} (id={pid}):")
@@ -105,7 +117,7 @@ def main() -> None:
                 if zuviel:
                     print("   zu viel in DB:", ", ".join(f"{d} {h}:00" for d, h in zuviel))
 
-            if FIX:
+            if fix:
                 conn.execute(
                     text("DELETE FROM verfuegbarkeit WHERE person_id = :pid AND periode_id IS NULL"),
                     {"pid": pid},
@@ -116,17 +128,25 @@ def main() -> None:
                             "INSERT INTO verfuegbarkeit (person_id, periode_id, wochentag, stunde, verfuegbar) "
                             "VALUES (:pid, NULL, :tag, :std, 1)"
                         ),
-                        # SQLAlchemy speichert Enum-NAMEN ('MO', 'DI', ...) in der DB
                         {"pid": pid, "tag": day.upper(), "std": float(hour)},
                     )
 
     print()
     if gesamt_diffs == 0:
         print("Keine Abweichungen - DB entspricht realdata.json.")
-    elif FIX:
+    elif fix:
         print(f"{gesamt_diffs} Personen korrigiert - DB entspricht jetzt realdata.json.")
     else:
         print(f"{gesamt_diffs} Personen mit Abweichungen. Korrektur mit: python sync_verfuegbarkeiten.py --fix")
+    return gesamt_diffs
+
+
+def main() -> None:
+    fix = "--fix" in sys.argv
+    try:
+        sync_verfuegbarkeiten(fix=fix)
+    except FileNotFoundError as err:
+        raise SystemExit(f"FEHLER: {err}") from err
 
 
 if __name__ == "__main__":

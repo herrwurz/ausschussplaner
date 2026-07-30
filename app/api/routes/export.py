@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -87,3 +87,22 @@ def export_sitzungen_ics(db: Session = Depends(get_db)):
         media_type="text/calendar; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/sync-verfuegbarkeiten")
+def sync_verfuegbarkeiten_endpoint():
+    """Standardverfügbarkeiten sofort an realdata.json angleichen (Admin)."""
+    from sync_verfuegbarkeiten import sync_verfuegbarkeiten
+
+    try:
+        diffs = sync_verfuegbarkeiten(fix=True)
+    except FileNotFoundError as err:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(err)) from err
+    except Exception as err:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(err)) from err
+    return {
+        "ok": True,
+        "personen_korrigiert_oder_geprueft": diffs,
+        "message": "Standardverfügbarkeiten an realdata.json angeglichen "
+        "(perioden-spezifische Einträge entfernt).",
+    }

@@ -198,6 +198,7 @@ export default function Verfuegbarkeiten() {
     <div>
       <div className="section-header">
         <h2>Verfügbarkeiten</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <button
           type="button"
           className="btn btn-primary"
@@ -206,6 +207,26 @@ export default function Verfuegbarkeiten() {
         >
           📄 Formular Verfügbarkeit
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={async () => {
+            try {
+              setMessage('')
+              const res = await api.post('/export/sync-verfuegbarkeiten')
+              setMessage(`✅ ${res.data?.message || 'Verfügbarkeiten synchronisiert'}`)
+              if (selectedPerson === 'alle') ladeUebersicht(selectedPeriode)
+              else if (selectedPerson) ladePerson(selectedPerson, selectedPeriode)
+              setTimeout(() => setMessage(''), 5000)
+            } catch (err) {
+              setMessage(`❌ Sync fehlgeschlagen: ${err.response?.data?.detail || err.message}`)
+            }
+          }}
+          title="Standardverfügbarkeiten aus realdata.json in die DB schreiben"
+        >
+          ↻ Sync realdata.json
+        </button>
+        </div>
       </div>
 
       {message && (
