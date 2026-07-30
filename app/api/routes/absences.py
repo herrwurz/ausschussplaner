@@ -5,11 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Abwesenheit, Person
 from app.schemas.schemas import AbwesenheitCreate, AbwesenheitOut
 
-router = APIRouter(prefix="/absences", tags=["Abwesenheiten"])
+router = APIRouter(
+    prefix="/absences",
+    tags=["Abwesenheiten"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 @router.get("", response_model=list[AbwesenheitOut])

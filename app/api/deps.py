@@ -49,6 +49,16 @@ def get_current_user(
     return user
 
 
+def require_staff(user: User = Depends(get_current_user)) -> User:
+    """Admin-Panel: SUPER_ADMIN und BENUTZER (Sekretärin etc.)."""
+    if user.rolle not in (BenutzerRolle.SUPER_ADMIN, BenutzerRolle.BENUTZER):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kein Zugriff auf die Admin-API",
+        )
+    return user
+
+
 def require_super_admin(user: User = Depends(get_current_user)) -> User:
     """Erlaube nur SUPER_ADMIN (403 sonst)."""
     if user.rolle != BenutzerRolle.SUPER_ADMIN:

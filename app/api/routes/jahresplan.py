@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Jahresplan
 from app.schemas.schemas import (
@@ -19,7 +20,11 @@ from app.services.jahresplan_service import (
     list_jahresplaene,
 )
 
-router = APIRouter(prefix="/jahresplan", tags=["Jahresplan"])
+router = APIRouter(
+    prefix="/jahresplan",
+    tags=["Jahresplan"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 @router.get("", response_model=list[JahresplanOut])

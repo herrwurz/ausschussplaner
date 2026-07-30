@@ -1,12 +1,10 @@
 """Authentication Service - Password Hashing & JWT Token Management."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from bcrypt import gensalt, hashpw, checkpw
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.models.models import User
 from app.models.enums import BenutzerRolle
 
@@ -27,9 +25,8 @@ class PasswordService:
 
 
 class TokenService:
-    """JWT Token Management."""
+    """JWT Token Management — nutzt dasselbe Secret wie Person-Portal."""
 
-    SECRET_KEY = get_settings().secret_key or "dev-secret-key-change-in-production"
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = 24 * 60  # 24 Stunden
 
@@ -40,27 +37,14 @@ class TokenService:
         expires_delta: Optional[timedelta] = None,
     ) -> str:
         """Erstelle einen JWT Access Token."""
-        to_encode = data.copy()
-        if expires_delta:
-            expire = datetime.utcnow() + expires_delta
-        else:
-            expire = datetime.utcnow() + timedelta(
-                minutes=cls.ACCESS_TOKEN_EXPIRE_MINUTES
-            )
-        to_encode.update({"exp": expire})
-        encoded_jwt = jwt.encode(
-            to_encode, cls.SECRET_KEY, algorithm=cls.ALGORITHM
-        )
-        return encoded_jwt
+        from app.core.security import create_access_token
+        return create_access_token(data, expires_delta)
 
     @classmethod
     def decode_token(cls, token: str) -> Optional[dict]:
         """Dekodiere einen JWT Token."""
-        try:
-            payload = jwt.decode(token, cls.SECRET_KEY, algorithms=[cls.ALGORITHM])
-            return payload
-        except JWTError:
-            return None
+        from app.core.security import decode_token
+        return decode_token(token)
 
 
 class AuthService:

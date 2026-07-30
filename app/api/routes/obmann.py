@@ -174,21 +174,25 @@ def calculate_ausschuss_termine(
         )
 
     try:
-        # Erstelle BerechnungRequest für den Ausschuss
         req = BerechnungRequest(
-            ausschuss_id=ausschuss_id,
-            start_date=None,
-            weeks=2,
+            ausschuss_ids=[ausschuss_id],
+            planungswochen=2,
+            periode_id=ausschuss.periode_id,
         )
 
         result = run_calculation(db, req)
+        analyse = next(
+            (a for a in result.analysen if a.ausschuss_id == ausschuss_id),
+            None,
+        )
+        slot_count = len(analyse.beste_je_tag) if analyse else 0
 
         return {
             "success": True,
             "ausschuss_id": ausschuss_id,
             "ausschuss_name": ausschuss.name,
             "results": {
-                "slot_count": len(result.slots) if hasattr(result, 'slots') else 0,
+                "slot_count": slot_count,
                 "data": result,
             },
         }

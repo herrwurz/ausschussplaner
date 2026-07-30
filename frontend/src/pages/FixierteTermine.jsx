@@ -5,6 +5,7 @@ export default function FixierteTermine() {
   const [termine, setTermine] = useState([])
   const [ausschuesse, setAusschuesse] = useState([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [perioden, setPerioden] = useState([])
@@ -71,6 +72,30 @@ export default function FixierteTermine() {
     }
   }
 
+  const handlePdfExport = async () => {
+    try {
+      setExporting(true)
+      setMessage('')
+      const res = await api.get('/calculate/results/pdf', { responseType: 'blob' })
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `sitzungsplan_${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      setMessage('✅ PDF heruntergeladen')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      setMessage(`❌ PDF-Export fehlgeschlagen: ${err.response?.data?.detail || err.message}`)
+      console.error(err)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const selectedPeriode = perioden.find(p => p.id === selectedPeriodeId)
 
   // Gruppiere Termine nach Woche und Tag
@@ -109,6 +134,14 @@ export default function FixierteTermine() {
 
       <div className="section-header">
         <h2>📆 Fixierte Termine - Kalender</h2>
+        <button
+          className="btn btn-primary"
+          onClick={handlePdfExport}
+          disabled={loading || exporting || termine.length === 0}
+          title={termine.length === 0 ? 'Keine Termine zum Exportieren' : 'Wochenplan als PDF herunterladen'}
+        >
+          {exporting ? 'PDF wird erstellt…' : '📄 PDF herunterladen'}
+        </button>
       </div>
 
       {message && (

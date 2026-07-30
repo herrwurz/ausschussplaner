@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Person, Verfuegbarkeit
 from app.schemas.schemas import (
@@ -18,7 +19,11 @@ from app.schemas.schemas import (
 )
 from app.services.person_service import transfer_agenda
 
-router = APIRouter(prefix="/persons", tags=["Personen"])
+router = APIRouter(
+    prefix="/persons",
+    tags=["Personen"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 @router.get("", response_model=list[PersonOut])
@@ -191,4 +196,11 @@ def send_invitation(person_id: int, db: Session = Depends(get_db)):
         asyncio.run(send_invitation_email(person.email, token, f"{person.vorname} {person.nachname}"))
         return {"message": f"Einladungs-Email an {person.email} gesendet"}
     except Exception as e:
-        return {"message": f"Email versand fehlgeschlagen: {str(e)}", "token": token}
+        # Token bleibt in DB für manuellen Set-Password-Link; nie im Response leaken
+        return {
+            "message": (
+                f"Einladung gespeichert, Email-Versand fehlgeschlagen: {e}. "
+                "Passwort kann über den gespeicherten Invite-Token gesetzt werden."
+            ),
+            "email_sent": False,
+        }
