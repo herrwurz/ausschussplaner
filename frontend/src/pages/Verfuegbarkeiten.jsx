@@ -52,9 +52,12 @@ export default function Verfuegbarkeiten() {
   const itemsToMatrix = (items) => {
     const matrix = emptyMatrix()
     const extras = []
+    const dayMap = { MO: 'Mo', DI: 'Di', MI: 'Mi', DO: 'Do', FR: 'Fr' }
     items.forEach((item) => {
       if (!item.verfuegbar) return
-      const key = `${item.wochentag}-${item.stunde}`
+      const day = dayMap[item.wochentag] || item.wochentag
+      const hour = Number(item.stunde)
+      const key = `${day}-${hour}`
       if (key in matrix) matrix[key] = true
       else extras.push(item) // z.B. 16.5 — nicht im Raster, aber nicht verlieren
     })

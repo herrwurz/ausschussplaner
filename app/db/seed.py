@@ -15,7 +15,9 @@ Ausführung:  python -m app.db.seed
 """
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 
 from app.db.base import Base, SessionLocal, engine
 from app.models.enums import AusschussTyp, Rolle, Wochentag
@@ -32,7 +34,52 @@ from app.models.models import (
 
 SLOTS = [7, 16, 16.5, 17, 17.5, 18, 18.5, 19]
 DAYS = [Wochentag.MO, Wochentag.DI, Wochentag.MI, Wochentag.DO, Wochentag.FR]
+REALDATA_HOURS = [7, 16, 17, 18, 19]
+REALDATA_DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr"]
 J, N = True, False
+
+
+def _norm_name(*teile: str) -> frozenset[str]:
+    tokens: set[str] = set()
+    for teil in teile:
+        tokens.update(t for t in teil.lower().replace(",", " ").split() if t)
+    return frozenset(tokens)
+
+
+def _apply_realdata_verfuegbarkeiten(db) -> None:
+    """Überschreibt Standardverfügbarkeiten mit realdata.json (falls vorhanden)."""
+    path = Path(__file__).resolve().parents[2] / "realdata.json"
+    if not path.exists():
+        print(f"[WARN] {path.name} nicht gefunden - Seed-Matrizen bleiben unveraendert.")
+        return
+
+    daten = json.loads(path.read_text(encoding="utf-8"))
+    by_name = {_norm_name(e["Name"]): e for e in daten}
+    applied = 0
+    for person in db.query(Person).all():
+        eintrag = by_name.get(_norm_name(person.vorname, person.nachname))
+        if not eintrag:
+            continue
+        db.query(Verfuegbarkeit).filter(
+            Verfuegbarkeit.person_id == person.id,
+            Verfuegbarkeit.periode_id.is_(None),
+        ).delete()
+        for day_label, day_enum in zip(REALDATA_DAY_LABELS, DAYS, strict=True):
+            for hour in REALDATA_HOURS:
+                if eintrag.get(f"{day_label} {hour:02d}:00") == "Ja":
+                    db.add(
+                        Verfuegbarkeit(
+                            person_id=person.id,
+                            periode_id=None,
+                            wochentag=day_enum,
+                            stunde=float(hour),
+                            verfuegbar=True,
+                        )
+                    )
+        applied += 1
+    db.commit()
+    print(f"[OK] Verfuegbarkeiten aus realdata.json uebernommen ({applied} Personen).")
+
 
 # Hilfsfunktion: Konvertiere alte 5-Slot-Matrix zu neuer 8-Slot-Matrix
 def expand_matrix(old_matrix):
@@ -353,6 +400,10 @@ def seed_data(db=None) -> None:
         aktiv = sum(1 for p in PERSONS_DATA if p[4])
         print(f"[OK] Seed-Daten geladen: {len(PERSONS_DATA)} Personen "
               f"({aktiv} aktiv), {len(COMMITTEES_DATA)} Ausschuesse")
+
+        # realdata.json ist Quelle der Wahrheit für Standardverfügbarkeiten —
+        # überschreibt die (teils veralteten) PERSONS_DATA-Matrizen.
+        _apply_realdata_verfuegbarkeiten(db)
 
         # Erstelle Gemeinderatsperiode P1 2025-2029
         seed_periode_data(db)

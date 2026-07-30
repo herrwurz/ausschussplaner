@@ -21,6 +21,9 @@ echo Running database migrations (idempotent)...
 .venv\Scripts\python.exe migrate_verfuegbarkeit_periode.py
 .venv\Scripts\python.exe migrate_sitzungsvorschlag_planungs_start.py
 
+echo Syncing Verfuegbarkeiten from realdata.json (source of truth)...
+.venv\Scripts\python.exe sync_verfuegbarkeiten.py --fix
+
 echo Starting Backend Server (FastAPI)...
 start "AusschussPlaner Backend" cmd /k ^
     ".venv\Scripts\activate.bat && python -m uvicorn app.main:app --reload"

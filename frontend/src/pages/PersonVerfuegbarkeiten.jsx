@@ -31,8 +31,10 @@ export default function PersonVerfuegbarkeiten() {
       try {
         const res = await api.get('/person/me/verfuegbarkeiten')
         const matrix = emptyMatrix()
+        const dayMap = { MO: 'Mo', DI: 'Di', MI: 'Mi', DO: 'Do', FR: 'Fr' }
         ;(res.data || []).forEach((v) => {
-          const key = `${v.wochentag}-${v.stunde}`
+          const day = dayMap[v.wochentag] || v.wochentag
+          const key = `${day}-${Number(v.stunde)}`
           if (key in matrix && v.verfuegbar) matrix[key] = true
         })
         setAvailability(matrix)
