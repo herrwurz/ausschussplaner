@@ -155,6 +155,29 @@ def test_obmann_ohne_zuweisung_sieht_nichts(anon_client, obmann, ausschuesse):
     assert r.json() == []
 
 
+def test_obmann_sieht_ausschuesse_via_mitgliedschaft(anon_client, db_session, obmann, ausschuesse):
+    """Gleiche E-Mail wie Person + Rolle Obmann → Dashboard zeigt Ausschuss."""
+    from app.models.enums import Rolle
+    from app.models.models import Mitgliedschaft, Person
+
+    a1, a2 = ausschuesse
+    person = Person(
+        vorname="Otto", nachname="Obmann", email="obmann@test.local",
+        gremium="GR", aktiv=True,
+    )
+    db_session.add(person)
+    db_session.flush()
+    db_session.add(Mitgliedschaft(person_id=person.id, ausschuss_id=a1.id, rolle=Rolle.OBMANN))
+    db_session.commit()
+
+    headers = login(anon_client, "obmann@test.local", "obmann123")
+    r = anon_client.get("/api/obmann/ausschuesse", headers=headers)
+    assert r.status_code == 200
+    ids = [a["id"] for a in r.json()]
+    assert ids == [a1.id]
+    assert a2.id not in ids
+
+
 def test_obmann_calculate_fremder_ausschuss_403(anon_client, db_session, obmann, ausschuesse):
     a1, a2 = ausschuesse
     obmann.obmann_ausschuss_ids = json.dumps([a1.id])

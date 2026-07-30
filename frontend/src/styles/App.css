@@ -148,9 +148,10 @@ body {
 /* ─────────── CONTENT ─────────── */
 .content {
   flex: 1;
-  padding: 50px;
+  padding: 0;
   overflow-y: auto;
   background: var(--bg-light);
+  min-width: 0;
 }
 
 .content h1 {
@@ -439,7 +440,7 @@ body {
   }
 
   .content {
-    padding: 25px;
+    padding: 0;
   }
 
   .content h1 {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import api from '../api/client'
+import AdminLayout from '../components/AdminLayout'
 import '../styles/AdminPanel.css'
 import '../styles/BenutzerTab.css'
 import PeriodenManagement from './PeriodenManagement'
@@ -12,10 +13,31 @@ import Sitzungsregeln from './Sitzungsregeln'
 import Abwesenheiten from './Abwesenheiten'
 import Verfuegbarkeiten from './Verfuegbarkeiten'
 
+const TAB_PATHS = {
+  benutzer: '/admin/benutzer',
+  personen: '/admin/personen',
+  perioden: '/admin/perioden',
+  ausschuesse: '/admin/ausschuesse',
+  mitgliedschaften: '/admin/mitgliedschaften',
+  'termine-berechnung': '/admin/termine-berechnung',
+  'fixierte-termine': '/admin/fixierte-termine',
+  abwesenheiten: '/admin/abwesenheiten',
+  verfuegbarkeiten: '/admin/verfuegbarkeiten',
+  sitzungsregeln: '/admin/sitzungsregeln',
+}
+
+function pathToTab(pathname) {
+  if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'personen'
+  for (const [tab, path] of Object.entries(TAB_PATHS)) {
+    if (pathname === path || pathname.endsWith(`/${tab}`)) return tab
+  }
+  return 'personen'
+}
+
 export default function AdminPanel() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [activeTab, setActiveTab] = useState('personen')
+  const [activeTab, setActiveTab] = useState(() => pathToTab(location.pathname))
   let user = {}
   try {
     user = JSON.parse(localStorage.getItem('user') || '{}')
@@ -23,28 +45,6 @@ export default function AdminPanel() {
     user = {}
   }
   const isSuperAdmin = user.rolle === 'super_admin'
-
-  const TAB_PATHS = {
-    benutzer: '/admin/benutzer',
-    personen: '/admin/personen',
-    perioden: '/admin/perioden',
-    ausschuesse: '/admin/ausschuesse',
-    mitgliedschaften: '/admin/mitgliedschaften',
-    'termine-berechnung': '/admin/termine-berechnung',
-    'fixierte-termine': '/admin/fixierte-termine',
-    abwesenheiten: '/admin/abwesenheiten',
-    verfuegbarkeiten: '/admin/verfuegbarkeiten',
-    sitzungsregeln: '/admin/sitzungsregeln',
-  }
-
-  const pathToTab = (pathname) => {
-    const entry = Object.entries(TAB_PATHS).find(([, path]) => pathname.includes(path.replace('/admin/', '')))
-    if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'personen'
-    for (const [tab, path] of Object.entries(TAB_PATHS)) {
-      if (pathname === path || pathname.endsWith(path.split('/').pop())) return tab
-    }
-    return entry ? entry[0] : 'personen'
-  }
 
   useEffect(() => {
     setActiveTab(pathToTab(location.pathname))
@@ -58,11 +58,6 @@ export default function AdminPanel() {
     }
   }, [navigate])
 
-  const selectTab = (tab) => {
-    setActiveTab(tab)
-    navigate(TAB_PATHS[tab] || '/admin/panel')
-  }
-
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -71,96 +66,23 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="admin-container">
-      <header className="admin-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>Admin Panel - AusschussPlaner</h1>
-          <button className="btn btn-secondary" onClick={handleLogout} style={{ fontSize: '0.9rem' }}>
-            Logout
-          </button>
-        </div>
-      </header>
-
-      <div className="admin-tabs">
-        {isSuperAdmin && (
-          <button
-            className={`tab-btn ${activeTab === 'benutzer' ? 'active' : ''}`}
-            onClick={() => selectTab('benutzer')}
-          >
-            Benutzer
-          </button>
-        )}
-        <button
-          className={`tab-btn ${activeTab === 'personen' ? 'active' : ''}`}
-          onClick={() => selectTab('personen')}
-        >
-          Personen
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'perioden' ? 'active' : ''}`}
-          onClick={() => selectTab('perioden')}
-        >
-          Perioden
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'ausschuesse' ? 'active' : ''}`}
-          onClick={() => selectTab('ausschuesse')}
-        >
-          Ausschüsse
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'mitgliedschaften' ? 'active' : ''}`}
-          onClick={() => selectTab('mitgliedschaften')}
-        >
-          Mitgliedschaften
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'termine-berechnung' ? 'active' : ''}`}
-          onClick={() => selectTab('termine-berechnung')}
-        >
-          Berechnung
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'fixierte-termine' ? 'active' : ''}`}
-          onClick={() => selectTab('fixierte-termine')}
-        >
-          Fixierte Termine
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'abwesenheiten' ? 'active' : ''}`}
-          onClick={() => selectTab('abwesenheiten')}
-        >
-          Abwesenheiten
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'verfuegbarkeiten' ? 'active' : ''}`}
-          onClick={() => selectTab('verfuegbarkeiten')}
-        >
-          Verfügbarkeiten
-        </button>
-        {isSuperAdmin && (
-          <button
-            className={`tab-btn ${activeTab === 'sitzungsregeln' ? 'active' : ''}`}
-            onClick={() => selectTab('sitzungsregeln')}
-          >
-            Sitzungsregeln
-          </button>
-        )}
-      </div>
-
-      <div className="admin-content">
-        {isSuperAdmin && activeTab === 'benutzer' && <BenutzerTab />}
-        {activeTab === 'personen' && <PersonenTab />}
-        {activeTab === 'perioden' && <PeriodenManagement />}
-        {activeTab === 'ausschuesse' && <AusschuessProPeriode />}
-        {activeTab === 'mitgliedschaften' && <MitgliedschaftenManagement />}
-        {activeTab === 'termine-berechnung' && <Terminberechnung />}
-        {activeTab === 'fixierte-termine' && <FixierteTermine />}
-        {activeTab === 'abwesenheiten' && <Abwesenheiten />}
-        {activeTab === 'verfuegbarkeiten' && <Verfuegbarkeiten />}
-        {isSuperAdmin && activeTab === 'sitzungsregeln' && <Sitzungsregeln />}
-      </div>
-    </div>
+    <AdminLayout
+      activeTab={activeTab}
+      isSuperAdmin={isSuperAdmin}
+      user={user}
+      onLogout={handleLogout}
+    >
+      {isSuperAdmin && activeTab === 'benutzer' && <BenutzerTab />}
+      {activeTab === 'personen' && <PersonenTab />}
+      {activeTab === 'perioden' && <PeriodenManagement />}
+      {activeTab === 'ausschuesse' && <AusschuessProPeriode />}
+      {activeTab === 'mitgliedschaften' && <MitgliedschaftenManagement />}
+      {activeTab === 'termine-berechnung' && <Terminberechnung />}
+      {activeTab === 'fixierte-termine' && <FixierteTermine />}
+      {activeTab === 'abwesenheiten' && <Abwesenheiten />}
+      {activeTab === 'verfuegbarkeiten' && <Verfuegbarkeiten />}
+      {isSuperAdmin && activeTab === 'sitzungsregeln' && <Sitzungsregeln />}
+    </AdminLayout>
   )
 }
 

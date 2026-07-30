@@ -27,7 +27,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
       return <Navigate to="/obmann/dashboard" replace />
     }
   } else if (requiredRole === 'obmann') {
-    if (user.rolle !== 'obmann') {
+    if (!['obmann', 'super_admin'].includes(user.rolle)) {
       return <Navigate to="/admin/login" replace />
     }
   } else if (requiredRole === 'super_admin') {

@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
+import { usePeriod } from '../contexts/PeriodContext'
+import PageHeader from '../components/PageHeader'
 
 export default function PeriodenManagement() {
+  const { refreshPerioden } = usePeriod()
   const [perioden, setPerioden] = useState([])
   const [ausschuessPerPeriode, setAusschuessPerPeriode] = useState({})
   const [loading, setLoading] = useState(true)
@@ -67,7 +70,8 @@ export default function PeriodenManagement() {
       setShowForm(false)
       setEditingId(null)
       setFormData({ name: '', start_jahr: new Date().getFullYear(), end_jahr: new Date().getFullYear() + 4 })
-      fetchData()
+      await fetchData()
+      await refreshPerioden()
     } catch (err) {
       setError(err.response?.data?.detail || 'Fehler beim Speichern')
     }
@@ -83,7 +87,8 @@ export default function PeriodenManagement() {
     if (!window.confirm('Periode wirklich löschen? Zugehörige Ausschüsse werden mitgelöscht.')) return
     try {
       await api.delete(`/perioden/${id}`)
-      fetchData()
+      await fetchData()
+      await refreshPerioden()
     } catch (err) {
       setError('Löschen fehlgeschlagen')
     }
@@ -93,12 +98,14 @@ export default function PeriodenManagement() {
     <>
       {error && <div className="alert alert-danger">{error}</div>}
 
-      <div className="section-header">
-        <h2>Perioden-Verwaltung</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          + Neue Periode
-        </button>
-      </div>
+      <PageHeader
+        title="Perioden-Verwaltung"
+        actions={(
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+            + Neue Periode
+          </button>
+        )}
+      />
 
       {showForm && (
         <form className="admin-form" onSubmit={handleSubmit}>
