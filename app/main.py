@@ -74,19 +74,37 @@ def ensure_admin_user(db) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Erzeugt Tabellen beim Start (für Dev; in Prod via Alembic) und lädt Seed-Daten."""
+    """Erzeugt Tabellen, führt idempotente SQLite-Migrationen aus, lädt Seed bei leerer DB."""
     Base.metadata.create_all(bind=engine)
 
-    # Seed-Daten laden wenn Tabellen leer sind
+    # Additive Schema-Fixes für bestehende SQLite-Volumes (Coolify/Prod)
+    try:
+        from migrate_verfuegbarkeit_periode import main as migrate_verfuegbarkeit
+        from migrate_sitzungsvorschlag_planungs_start import main as migrate_planungs_start
+
+        migrate_verfuegbarkeit()
+        migrate_planungs_start()
+    except Exception as err:
+        print(f"WARNUNG: Startup-Migration fehlgeschlagen: {err}")
+
     db = SessionLocal()
     try:
         from app.models.models import Person
         if db.query(Person).count() == 0:
             seed_data(db)
-            print("✅ Seed-Daten geladen")
+            print("Seed-Daten geladen")
         ensure_admin_user(db)
     finally:
         db.close()
+
+    if settings.sync_verfuegbarkeiten_on_start:
+        try:
+            from sync_verfuegbarkeiten import sync_verfuegbarkeiten
+
+            print("Sync Verfuegbarkeiten aus realdata.json ...")
+            sync_verfuegbarkeiten(fix=True)
+        except Exception as err:
+            print(f"WARNUNG: Verfuegbarkeiten-Sync fehlgeschlagen: {err}")
 
     yield
 

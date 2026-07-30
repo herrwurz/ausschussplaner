@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client'
+import { usePeriod } from '../contexts/PeriodContext'
+import PageHeader from '../components/PageHeader'
 
 // Nur die für die Terminberechnung relevanten Stunden (Engine nutzt volle Stunden)
 const HOURS = [7, 16, 17, 18, 19]
@@ -13,10 +15,9 @@ const emptyMatrix = () => {
 }
 
 export default function Verfuegbarkeiten() {
+  const { selectedPeriodeId, selectedPeriode } = usePeriod()
   const [persons, setPersons] = useState([])
-  const [perioden, setPerioden] = useState([])
   const [selectedPerson, setSelectedPerson] = useState('')
-  const [selectedPeriode, setSelectedPeriode] = useState('')
   const [availability, setAvailability] = useState({})
   // Einträge außerhalb des Rasters (z.B. halbe Stunden) beim Speichern erhalten
   const [extraItems, setExtraItems] = useState([])
@@ -29,14 +30,8 @@ export default function Verfuegbarkeiten() {
   useEffect(() => {
     const fetchBase = async () => {
       try {
-        const [pRes, perRes] = await Promise.all([
-          api.get('/persons'),
-          api.get('/perioden'),
-        ])
+        const pRes = await api.get('/persons')
         setPersons(pRes.data.filter(p => p.aktiv))
-        setPerioden(perRes.data)
-        // Erste Periode vorauswählen
-        if (perRes.data.length > 0) setSelectedPeriode(String(perRes.data[0].id))
       } catch (error) {
         setMessage('❌ Stammdaten laden fehlgeschlagen')
         console.error('Error:', error)
@@ -47,7 +42,7 @@ export default function Verfuegbarkeiten() {
     fetchBase()
   }, [])
 
-  const periodeParams = () => ({ periode_id: selectedPeriode })
+  const periodeParams = () => ({ periode_id: selectedPeriodeId })
 
   const itemsToMatrix = (items) => {
     const matrix = emptyMatrix()
@@ -106,16 +101,16 @@ export default function Verfuegbarkeiten() {
     }
   }
 
+  useEffect(() => {
+    if (!selectedPeriodeId || !selectedPerson) return
+    if (selectedPerson === 'alle') ladeUebersicht(selectedPeriodeId)
+    else ladePerson(selectedPerson, selectedPeriodeId)
+  }, [selectedPeriodeId])
+
   const handlePersonChange = (personId) => {
     setSelectedPerson(personId)
-    if (personId === 'alle') ladeUebersicht(selectedPeriode)
-    else ladePerson(personId, selectedPeriode)
-  }
-
-  const handlePeriodeChange = (periodeId) => {
-    setSelectedPeriode(periodeId)
-    if (selectedPerson === 'alle') ladeUebersicht(periodeId)
-    else if (selectedPerson) ladePerson(selectedPerson, periodeId)
+    if (personId === 'alle') ladeUebersicht(selectedPeriodeId)
+    else ladePerson(personId, selectedPeriodeId)
   }
 
   const toggleAvailability = (day, hour) => {
@@ -150,7 +145,7 @@ export default function Verfuegbarkeiten() {
         items.push({ wochentag: item.wochentag, stunde: item.stunde, verfuegbar: item.verfuegbar })
       })
       await api.put(`/persons/${selectedPerson}/verfuegbarkeit`, { items }, { params: periodeParams() })
-      const periodeName = perioden.find(p => String(p.id) === String(selectedPeriode))?.name || selectedPeriode
+      const periodeName = selectedPeriode?.name || selectedPeriodeId
       setMessage(`✅ Verfügbarkeiten für Periode ${periodeName} gespeichert`)
       setIstFallback(false)
       setTimeout(() => setMessage(''), 3000)
@@ -171,8 +166,7 @@ export default function Verfuegbarkeiten() {
       setMessage('')
       const params = {}
       if (selectedPeriode) {
-        const p = perioden.find((x) => String(x.id) === String(selectedPeriode))
-        if (p) params.periode = `${p.name} (${p.start_jahr}–${p.end_jahr})`
+        params.periode = `${selectedPeriode.name} (${selectedPeriode.start_jahr}–${selectedPeriode.end_jahr})`
       }
       const res = await api.get('/export/formular/verfuegbarkeit.pdf', {
         params,
@@ -196,17 +190,41 @@ export default function Verfuegbarkeiten() {
 
   return (
     <div>
-      <div className="section-header">
-        <h2>Verfügbarkeiten</h2>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={downloadVerfuegbarkeitFormular}
-          title="Formular: Name | Uhrzeiten – zum Verteilen in der GR"
-        >
-          📄 Formular Verfügbarkeit
-        </button>
-      </div>
+      <PageHeader
+        title="Verfügbarkeiten"
+        description={selectedPeriode ? `Periode: ${selectedPeriode.name}` : 'Periode in der Topbar wählen'}
+        actions={(
+          <>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={downloadVerfuegbarkeitFormular}
+              title="Formular: Name | Uhrzeiten – zum Verteilen in der GR"
+            >
+              📄 Formular Verfügbarkeit
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={async () => {
+                try {
+                  setMessage('')
+                  const res = await api.post('/export/sync-verfuegbarkeiten')
+                  setMessage(`✅ ${res.data?.message || 'Verfügbarkeiten synchronisiert'}`)
+                  if (selectedPerson === 'alle') ladeUebersicht(selectedPeriodeId)
+                  else if (selectedPerson) ladePerson(selectedPerson, selectedPeriodeId)
+                  setTimeout(() => setMessage(''), 5000)
+                } catch (err) {
+                  setMessage(`❌ Sync fehlgeschlagen: ${err.response?.data?.detail || err.message}`)
+                }
+              }}
+              title="Standardverfügbarkeiten aus realdata.json in die DB schreiben"
+            >
+              ↻ Sync realdata.json
+            </button>
+          </>
+        )}
+      />
 
       {message && (
         <div style={{
@@ -219,19 +237,6 @@ export default function Verfuegbarkeiten() {
       )}
 
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-        <div>
-          <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>Periode:</label>
-          <select
-            value={selectedPeriode}
-            onChange={(e) => handlePeriodeChange(e.target.value)}
-            style={{ padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.95rem', minWidth: '220px' }}
-          >
-            {perioden.length === 0 && <option value="">Keine Periode angelegt</option>}
-            {perioden.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} ({p.start_jahr}–{p.end_jahr})</option>
-            ))}
-          </select>
-        </div>
         <div>
           <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>Person:</label>
           <select

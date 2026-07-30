@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import './styles/App.css'
+import './styles/AdminPanel.css'
+import { PeriodProvider } from './contexts/PeriodContext'
 import PersonLogin from './pages/PersonLogin'
 import PersonSetPassword from './pages/PersonSetPassword'
 import PersonDashboard from './pages/PersonDashboard'
@@ -13,11 +15,14 @@ import AdminLogin from './pages/AdminLogin'
 import AdminPanel from './pages/AdminPanel'
 import ObmannDashboard from './pages/ObmannDashboard'
 import ProtectedRoute from './components/ProtectedRoute'
+import PersonPortalLayout from './components/PersonPortalLayout'
 
 function AdminPanelRoute() {
   return (
     <ProtectedRoute requiredRole="admin">
-      <AdminPanel />
+      <PeriodProvider>
+        <AdminPanel />
+      </PeriodProvider>
     </ProtectedRoute>
   )
 }
@@ -51,13 +56,15 @@ function AppLayout() {
           <Route path="/person" element={<Navigate to="/person/login" replace />} />
           <Route path="/person/login" element={<PersonLogin />} />
           <Route path="/person/set-password" element={<PersonSetPassword />} />
-          <Route path="/person/dashboard" element={<PersonDashboard />} />
-          <Route path="/person/profile" element={<PersonProfile />} />
-          <Route path="/person/password" element={<PersonPassword />} />
-          <Route path="/person/verfuegbarkeiten" element={<PersonVerfuegbarkeiten />} />
-          <Route path="/person/absences" element={<PersonAbsences />} />
-          <Route path="/person/committees" element={<PersonCommittees />} />
-          <Route path="/person/sitzungen" element={<PersonSitzungen />} />
+          <Route element={<PersonPortalLayout />}>
+            <Route path="/person/dashboard" element={<PersonDashboard />} />
+            <Route path="/person/profile" element={<PersonProfile />} />
+            <Route path="/person/password" element={<PersonPassword />} />
+            <Route path="/person/verfuegbarkeiten" element={<PersonVerfuegbarkeiten />} />
+            <Route path="/person/absences" element={<PersonAbsences />} />
+            <Route path="/person/committees" element={<PersonCommittees />} />
+            <Route path="/person/sitzungen" element={<PersonSitzungen />} />
+          </Route>
 
           <Route path="/login" element={<Navigate to="/admin/login" replace />} />
           <Route path="/" element={<Navigate to="/admin/login" replace />} />

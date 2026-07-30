@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
 import api from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 // Gleiches Raster wie Admin / Engine (Mo–Fr, relevante volle Stunden)
 const HOURS = [7, 16, 17, 18, 19]
@@ -18,15 +18,8 @@ export default function PersonVerfuegbarkeiten() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
-  const navigate = useNavigate()
 
   useEffect(() => {
-    const token = localStorage.getItem('personToken')
-    if (!token) {
-      navigate('/person/login')
-      return
-    }
-
     const fetchAvailability = async () => {
       try {
         const res = await api.get('/person/me/verfuegbarkeiten')
@@ -38,16 +31,14 @@ export default function PersonVerfuegbarkeiten() {
           if (key in matrix && v.verfuegbar) matrix[key] = true
         })
         setAvailability(matrix)
-      } catch (err) {
-        if (err.response?.status === 401) {
-          navigate('/person/login')
-        }
+      } catch {
+        /* Auth via layout */
       } finally {
         setLoading(false)
       }
     }
     fetchAvailability()
-  }, [navigate])
+  }, [])
 
   const toggleAvailability = (day, hour) => {
     const key = `${day}-${hour}`
@@ -83,16 +74,16 @@ export default function PersonVerfuegbarkeiten() {
   if (loading) return <div className="alert alert-info">Lädt...</div>
 
   return (
-    <div className="container mt-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h2>Meine Verfügbarkeiten</h2>
-        <Link to="/person/dashboard" className="btn btn-secondary">Zurück</Link>
-      </div>
-
-      <p className="text-muted" style={{ fontSize: '0.9rem' }}>
-        Standardverfügbarkeit Mo–Fr für die Sitzungszeiten (07:00 sowie 16:00–19:00).
-        Perioden-spezifische Overrides setzt der Admin.
-      </p>
+    <div>
+      <PageHeader
+        title="Meine Verfügbarkeiten"
+        description="Standardverfügbarkeit Mo–Fr (07:00 sowie 16:00–19:00). Perioden-Overrides setzt der Admin."
+        actions={(
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Speichert...' : 'Speichern'}
+          </button>
+        )}
+      />
 
       {message && (
         <div className={`alert ${message.includes('Fehler') ? 'alert-danger' : 'alert-success'}`}>
@@ -135,10 +126,6 @@ export default function PersonVerfuegbarkeiten() {
           </tbody>
         </table>
       </div>
-
-      <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-        {saving ? 'Speichert…' : 'Speichern'}
-      </button>
     </div>
   )
 }

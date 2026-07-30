@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
+import { usePeriod } from '../contexts/PeriodContext'
+import PageHeader from '../components/PageHeader'
 
 export default function MitgliedschaftenManagement() {
-  const [perioden, setPerioden] = useState([])
-  const [selectedPeriodeId, setSelectedPeriodeId] = useState(null)
+  const { selectedPeriodeId, selectedPeriode } = usePeriod()
   const [personen, setPersonen] = useState([])
   const [ausschuesse, setAusschuesse] = useState([])
   const [mitgliedschaften, setMitgliedschaften] = useState([])
@@ -18,22 +19,6 @@ export default function MitgliedschaftenManagement() {
     { value: 'Obmann Stellvertreter', label: 'Obmann-Stellvertreter' },
     { value: 'Mitglied', label: 'Mitglied' },
   ]
-
-  useEffect(() => {
-    fetchPerioden()
-  }, [])
-
-  const fetchPerioden = async () => {
-    try {
-      const res = await api.get('/perioden')
-      setPerioden(res.data)
-      if (res.data.length > 0) {
-        setSelectedPeriodeId(res.data[0].id)
-      }
-    } catch (err) {
-      setError('Perioden laden fehlgeschlagen')
-    }
-  }
 
   useEffect(() => {
     if (selectedPeriodeId) {
@@ -147,40 +132,14 @@ export default function MitgliedschaftenManagement() {
     }
   }
 
-  const selectedPeriode = perioden.find(p => p.id === selectedPeriodeId)
-
   return (
     <>
       {error && <div className="alert alert-danger">{error}</div>}
 
-      <div className="section-header">
-        <h2>Mitgliedschaften pro Periode</h2>
-      </div>
-
-      {/* Periode Selector */}
-      <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f3f4f6', borderRadius: '4px' }}>
-        <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
-          Periode:
-        </label>
-        <select
-          value={selectedPeriodeId || ''}
-          onChange={(e) => setSelectedPeriodeId(parseInt(e.target.value))}
-          style={{
-            padding: '0.5rem',
-            border: '1px solid #d1d5db',
-            borderRadius: '4px',
-            fontSize: '0.95rem',
-            width: '100%',
-            maxWidth: '400px',
-          }}
-        >
-          {perioden.map((periode) => (
-            <option key={periode.id} value={periode.id}>
-              {periode.name} ({periode.start_jahr}–{periode.end_jahr})
-            </option>
-          ))}
-        </select>
-      </div>
+      <PageHeader
+        title="Mitgliedschaften pro Periode"
+        description={selectedPeriode ? `${selectedPeriode.name} (${selectedPeriode.start_jahr}–${selectedPeriode.end_jahr})` : 'Periode in der Topbar wählen'}
+      />
 
       {loading ? (
         <p>Lädt...</p>

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
+import { usePeriod } from '../contexts/PeriodContext'
+import PageHeader from '../components/PageHeader'
 
 export default function Terminberechnung() {
-  const [perioden, setPerioden] = useState([])
-  const [selectedPeriodeId, setSelectedPeriodeId] = useState(null)
+  const { selectedPeriodeId, selectedPeriode } = usePeriod()
   const [ausschuesse, setAusschuesse] = useState([])
   const [selectedAusschussIds, setSelectedAusschussIds] = useState([])
   const [planungswochen, setPlanungswochen] = useState(2)
@@ -19,26 +20,6 @@ export default function Terminberechnung() {
   // 0 = alle Termine anzeigen; 100 würde alles außer Volltreffern wegfiltern
   const [minVerfuegbarkeit, setMinVerfuegbarkeit] = useState(100)
   const [maxAnzahlTermine, setMaxAnzahlTermine] = useState(1)
-
-  useEffect(() => {
-    console.log('✅ COMPONENT MOUNTED - minVerfuegbarkeit=' + minVerfuegbarkeit + ', maxAnzahlTermine=' + maxAnzahlTermine)
-  }, [])
-
-  useEffect(() => {
-    fetchPerioden()
-  }, [])
-
-  const fetchPerioden = async () => {
-    try {
-      const res = await api.get('/perioden')
-      setPerioden(res.data)
-      if (res.data.length > 0) {
-        setSelectedPeriodeId(res.data[0].id)
-      }
-    } catch (err) {
-      setError('Perioden laden fehlgeschlagen')
-    }
-  }
 
   useEffect(() => {
     if (selectedPeriodeId) {
@@ -108,8 +89,6 @@ export default function Terminberechnung() {
     }
   }
 
-  const selectedPeriode = perioden.find(p => p.id === selectedPeriodeId)
-
   const fetchFixierteTermine = async () => {
     try {
       const res = await api.get('/calculate/results')
@@ -125,36 +104,12 @@ export default function Terminberechnung() {
 
       {!showResults ? (
         <>
-          <div className="section-header">
-            <h2>Terminberechnung für Ausschüsse</h2>
-          </div>
+          <PageHeader
+            title="Terminberechnung für Ausschüsse"
+            description={selectedPeriode ? `Periode: ${selectedPeriode.name}` : 'Periode in der Topbar wählen'}
+          />
 
           <form className="admin-form" onSubmit={handleCalculate}>
-            {/* Periode Selector */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
-                Periode:
-              </label>
-              <select
-                value={selectedPeriodeId || ''}
-                onChange={(e) => setSelectedPeriodeId(parseInt(e.target.value))}
-                style={{
-                  padding: '0.5rem',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '4px',
-                  fontSize: '0.95rem',
-                  width: '100%',
-                  maxWidth: '400px',
-                }}
-              >
-                {perioden.map((periode) => (
-                  <option key={periode.id} value={periode.id}>
-                    {periode.name} ({periode.start_jahr}–{periode.end_jahr})
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Sitzungsart Selector */}
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>

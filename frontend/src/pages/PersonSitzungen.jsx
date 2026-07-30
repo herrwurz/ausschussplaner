@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay } from 'date-fns'
 import de from 'date-fns/locale/de'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import api from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 const locales = { de }
 const localizer = dateFnsLocalizer({
@@ -59,15 +59,8 @@ export default function PersonSitzungen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedEvent, setSelectedEvent] = useState(null)
-  const navigate = useNavigate()
 
   useEffect(() => {
-    const token = localStorage.getItem('personToken')
-    if (!token) {
-      navigate('/person/login')
-      return
-    }
-
     const fetchSitzungen = async () => {
       try {
         setError('')
@@ -85,11 +78,7 @@ export default function PersonSitzungen() {
           .filter(Boolean)
 
         setEvents(calendarEvents)
-      } catch (err) {
-        if (err.response?.status === 401) {
-          navigate('/person/login')
-          return
-        }
+      } catch {
         setError('Sitzungen konnten nicht geladen werden')
       } finally {
         setLoading(false)
@@ -97,17 +86,17 @@ export default function PersonSitzungen() {
     }
 
     fetchSitzungen()
-  }, [navigate])
+  }, [])
 
   if (loading) {
-    return <div className="container mt-4">Lädt…</div>
+    return <div>Lädt…</div>
   }
 
   return (
-    <div className="container mt-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h2>Meine Sitzungen</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <div>
+      <PageHeader
+        title="Meine Sitzungen"
+        actions={(
           <button
             type="button"
             className="btn btn-primary"
@@ -125,16 +114,15 @@ export default function PersonSitzungen() {
                 a.click()
                 a.remove()
                 window.URL.revokeObjectURL(url)
-              } catch (err) {
+              } catch {
                 setError('PDF-Download fehlgeschlagen')
               }
             }}
           >
-            📄 PDF
+            PDF
           </button>
-          <Link to="/person/dashboard" className="btn btn-secondary">Zurück</Link>
-        </div>
-      </div>
+        )}
+      />
 
       {error && <div className="alert alert-danger">{error}</div>}
 
@@ -176,7 +164,7 @@ export default function PersonSitzungen() {
           {selectedEvent.resource.quote != null && (
             <p>Anwesenheitsquote: {selectedEvent.resource.quote}%</p>
           )}
-          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedEvent(null)}>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setSelectedEvent(null)}>
             Schließen
           </button>
         </div>
