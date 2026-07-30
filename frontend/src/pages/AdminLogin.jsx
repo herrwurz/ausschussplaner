@@ -33,8 +33,13 @@ export default function AdminLogin() {
 
       console.log('AdminLogin: Token saved, navigating to /admin/panel')
 
-      // Redirect zu Admin Panel
-      navigate('/admin/panel')
+      // Redirect je nach Rolle
+      const rolle = response.data.user.rolle
+      if (rolle === 'obmann') {
+        navigate('/obmann/dashboard')
+      } else {
+        navigate('/admin/panel')
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Login fehlgeschlagen')
       console.error(err)

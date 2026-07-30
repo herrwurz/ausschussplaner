@@ -57,8 +57,9 @@ class TerminStatus(str, enum.Enum):
 class BenutzerRolle(str, enum.Enum):
     """Rollen für Benutzer-Authentifizierung."""
 
-    SUPER_ADMIN = "super_admin"  # Ersteller & Betreuer (ich)
-    BENUTZER = "benutzer"        # Sekretärin, Bürgermeisterin, Amtsleiter
+    SUPER_ADMIN = "super_admin"  # Systembetreuung (Benutzerverwaltung, Sitzungsregeln)
+    SEKRETARIAT = "sekretariat"  # Bürgermeister-Sekretariat: planen/fixieren/exportieren
+    BENUTZER = "benutzer"        # Legacy-Staff (gleiche Rechte wie Sekretariat)
     OBMANN = "obmann"            # Ausschuss-Obmann (begrenzte Rechte)
 
 

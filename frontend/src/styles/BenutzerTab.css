@@ -276,6 +276,11 @@
   color: var(--color-info);
 }
 
+.role-sekretariat {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
 .role-obmann {
   background-color: var(--color-warning-light);
   color: var(--color-warning);

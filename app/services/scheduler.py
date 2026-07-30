@@ -77,6 +77,20 @@ TIME_SCORE = {
 }
 
 
+def time_to_minutes(hhmm: str) -> int:
+    """'HH:MM' → Minuten seit Mitternacht."""
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def filter_time_slots(fruehester_start: str | None = None) -> list[TimeSlot]:
+    """Optional: nur Slots mit Startzeit >= fruehester_start (z. B. '19:00' für STR/GR)."""
+    if not fruehester_start:
+        return list(TIME_SLOTS)
+    min_start = time_to_minutes(fruehester_start)
+    return [s for s in TIME_SLOTS if time_to_minutes(s.start_time) >= min_start]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # INPUT/OUTPUT STRUKTUREN
 # ═══════════════════════════════════════════════════════════════════════════
@@ -245,6 +259,7 @@ def evaluate_committee_slots(
     weeks: int = 2,
     start_date: date | None = None,
     freitag_modus: str = "reserve",
+    fruehester_start: str | None = None,
 ) -> list[SlotEvaluation]:
     """Evaluiere ALLE (Wochentag, Zeitslot, Woche) Kombinationen.
 
@@ -255,11 +270,14 @@ def evaluate_committee_slots(
         freitag_modus: "nein" = Freitag komplett ausschließen,
                        "reserve" = Freitag eine Prioritätsstufe schlechter (Default),
                        "normal" = Freitag gleichrangig (Abschlag bleibt als Tiebreak).
+        fruehester_start: optional "HH:MM" — nur Slots mit Start >= dieser Zeit
+                          (z. B. "19:00" für Stadtrat/Gemeinderat).
 
     Returns:
         Sortierte Liste von SlotEvaluation
     """
     weekdays = WEEKDAYS if freitag_modus != "nein" else [d for d in WEEKDAYS if d != Wochentag.FR]
+    slots = filter_time_slots(fruehester_start)
 
     # Filtere nur echte Mitglieder (mit Rolle) und dedupliziere nach person_id
     # (dieselbe Person darf nicht doppelt fürs Quorum zählen; Masterprompt §1)
@@ -293,7 +311,7 @@ def evaluate_committee_slots(
                 meeting_date = start_date + timedelta(days=days_offset)
 
             # Für jeden Zeitslot
-            for slot in TIME_SLOTS:
+            for slot in slots:
                 # Finde anwesende Mitglieder
                 present = [m for m in real_members if is_person_available_for_slot(m, weekday, slot, meeting_date)]
                 missing = [m for m in real_members if m not in present]
@@ -602,6 +620,7 @@ def calculate_committee_dates(
     max_alternatives: int = 10,
     start_date: date | None = None,
     freitag_modus: str = "reserve",
+    fruehester_start: str | None = None,
 ) -> dict[int, list[SlotEvaluation]]:
     """Berechne beste Termine für alle Ausschüsse.
 
@@ -611,13 +630,16 @@ def calculate_committee_dates(
         max_alternatives: Max. Anzahl Vorschläge pro Ausschuss
         start_date: Montag der ersten Planungswoche (optional, für Abwesenheits-Checks)
         freitag_modus: siehe evaluate_committee_slots
+        fruehester_start: siehe evaluate_committee_slots
 
     Returns:
         dict[committee_id] -> list[SlotEvaluation] (top N)
     """
     result = {}
     for committee in committees:
-        evaluations = evaluate_committee_slots(committee, weeks, start_date, freitag_modus)
+        evaluations = evaluate_committee_slots(
+            committee, weeks, start_date, freitag_modus, fruehester_start=fruehester_start
+        )
         # Gib Top N Termine pro Ausschuss
         result[committee.committee_id] = evaluations[:max_alternatives]
     return result

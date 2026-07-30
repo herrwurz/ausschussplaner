@@ -23,7 +23,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
   // Rolle nicht ausreichend
   if (requiredRole === 'admin') {
-    if (!['super_admin', 'benutzer'].includes(user.rolle)) {
+    if (!['super_admin', 'sekretariat', 'benutzer'].includes(user.rolle)) {
       return <Navigate to="/obmann/dashboard" replace />
     }
   } else if (requiredRole === 'obmann') {

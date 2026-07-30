@@ -7,6 +7,13 @@ from app.models.enums import BenutzerRolle
 from app.models.models import User
 from app.services.auth_service import TokenService
 
+# Admin-Panel / Staff-API (ohne Benutzerverwaltung)
+STAFF_ROLLEN = frozenset({
+    BenutzerRolle.SUPER_ADMIN,
+    BenutzerRolle.SEKRETARIAT,
+    BenutzerRolle.BENUTZER,
+})
+
 
 def get_current_user(
     db: Session = Depends(get_db),
@@ -50,8 +57,8 @@ def get_current_user(
 
 
 def require_staff(user: User = Depends(get_current_user)) -> User:
-    """Admin-Panel: SUPER_ADMIN und BENUTZER (Sekretärin etc.)."""
-    if user.rolle not in (BenutzerRolle.SUPER_ADMIN, BenutzerRolle.BENUTZER):
+    """Admin-Panel: Super-Admin, Sekretariat und Legacy-Benutzer."""
+    if user.rolle not in STAFF_ROLLEN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Kein Zugriff auf die Admin-API",

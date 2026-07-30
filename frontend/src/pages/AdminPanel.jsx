@@ -291,8 +291,16 @@ function BenutzerTab() {
     email: '',
     vorname: '',
     nachname: '',
-    rolle: 'benutzer',
+    rolle: 'sekretariat',
   })
+
+  const rolleLabel = (rolle) => {
+    if (rolle === 'super_admin') return 'Super Admin'
+    if (rolle === 'sekretariat') return 'Sekretariat'
+    if (rolle === 'obmann') return 'Obmann'
+    if (rolle === 'benutzer') return 'Benutzer'
+    return rolle
+  }
 
   useEffect(() => {
     fetchUsers()
@@ -316,7 +324,7 @@ function BenutzerTab() {
       setError('')
       const res = await api.post('/users', formData)
       setSuccess(`✅ Benutzer "${res.data.vorname} ${res.data.nachname}" erstellt!\nTemporäres Passwort: ${res.data.temp_password}`)
-      setFormData({ email: '', vorname: '', nachname: '', rolle: 'benutzer' })
+      setFormData({ email: '', vorname: '', nachname: '', rolle: 'sekretariat' })
       setShowForm(false)
       setTimeout(() => setSuccess(''), 5000)
       fetchUsers()
@@ -411,8 +419,9 @@ function BenutzerTab() {
               value={formData.rolle}
               onChange={(e) => setFormData({ ...formData, rolle: e.target.value })}
             >
-              <option value="benutzer">Benutzer</option>
+              <option value="sekretariat">Sekretariat</option>
               <option value="obmann">Obmann</option>
+              <option value="benutzer">Benutzer (Legacy)</option>
               <option value="super_admin">Super Admin</option>
             </select>
           </div>
@@ -439,7 +448,7 @@ function BenutzerTab() {
               <td>{user.vorname} {user.nachname}</td>
               <td>
                 <span className={`role-badge role-${user.rolle}`}>
-                  {user.rolle === 'super_admin' ? '👑 Super Admin' : user.rolle === 'obmann' ? '👔 Obmann' : '👤 Benutzer'}
+                  {rolleLabel(user.rolle)}
                 </span>
               </td>
               <td>

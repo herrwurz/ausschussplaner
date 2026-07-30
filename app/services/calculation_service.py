@@ -254,7 +254,11 @@ def run_calculation(db: Session, req: BerechnungRequest) -> BerechnungResponse:
     for ausschuss in ausschuesse:
         committee_input = _load_committee_input(ausschuss, start_date=start_date, weeks=weeks, db=db)
         evaluations = sched.evaluate_committee_slots(
-            committee_input, weeks=weeks, start_date=start_date, freitag_modus=freitag_modus
+            committee_input,
+            weeks=weeks,
+            start_date=start_date,
+            freitag_modus=freitag_modus,
+            fruehester_start=req.fruehester_start,
         )
         filtered = [e for e in evaluations if e.quote >= min_quote]
         all_evaluations_by_committee[ausschuss.id] = filtered

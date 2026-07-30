@@ -180,6 +180,26 @@ def test_freitag_modus_nein_excludes_friday():
     assert all(e.weekday != Wochentag.FR for e in res)
 
 
+def test_fruehester_start_filters_slots():
+    """STR/GR: nur Slots ab 19:00 — 17:00 darf nicht erscheinen."""
+    from app.services.scheduler import filter_time_slots
+
+    slots = filter_time_slots("19:00")
+    assert [s.start_time for s in slots] == ["19:00"]
+
+    avail = {
+        d: {"16:00", "17:00", "18:00", "19:00"}
+        for d in (Wochentag.MO, Wochentag.DI, Wochentag.MI, Wochentag.DO, Wochentag.FR)
+    }
+    members = [member(1, Rolle.OBMANN, avail), member(2, avail=avail)]
+    res = evaluate_committee_slots(
+        committee(members), weeks=1, fruehester_start="19:00"
+    )
+    assert res
+    assert all(e.start_time == "19:00" for e in res)
+    assert all(e.start_time != "17:00" for e in res)
+
+
 # ── Abwesenheiten & Datum ─────────────────────────────────────────────────────
 
 def test_absence_blocks_otherwise_available_slot():

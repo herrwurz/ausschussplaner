@@ -27,6 +27,14 @@ def benutzer(db_session):
 
 
 @pytest.fixture
+def sekretariat(db_session):
+    return AuthService.create_user(
+        db_session, email="sekretariat@test.local", password="sekret123",
+        vorname="Susi", nachname="Sekretariat", rolle=BenutzerRolle.SEKRETARIAT,
+    )
+
+
+@pytest.fixture
 def obmann(db_session):
     return AuthService.create_user(
         db_session, email="obmann@test.local", password="obmann123",
@@ -75,6 +83,32 @@ def test_users_als_benutzer_403(anon_client, benutzer):
     assert r.status_code == 403
 
 
+def test_users_als_sekretariat_403(anon_client, sekretariat):
+    headers = login(anon_client, "sekretariat@test.local", "sekret123")
+    assert anon_client.get("/api/users", headers=headers).status_code == 403
+    assert anon_client.post("/api/users", headers=headers, json={
+        "email": "neu@test.local", "vorname": "Neu", "nachname": "User",
+    }).status_code == 403
+
+
+def test_admin_api_als_sekretariat_ok(anon_client, sekretariat):
+    """Sekretariat darf planen (Personen/Ausschüsse/Berechnung), Regeln nur lesen."""
+    headers = login(anon_client, "sekretariat@test.local", "sekret123")
+    assert anon_client.get("/api/persons", headers=headers).status_code == 200
+    assert anon_client.get("/api/committees", headers=headers).status_code == 200
+    assert anon_client.get("/api/rules", headers=headers).status_code == 200
+    assert anon_client.put("/api/rules", headers=headers, json={
+        "block_minuten": 90,
+        "sitzung_minuten": 75,
+        "pause_minuten": 15,
+        "council_minuten": 240,
+        "planungswochen": 2,
+        "freitag_modus": "reserve",
+        "max_ausschuesse_pro_tag": 2,
+    }).status_code == 403
+    assert anon_client.get("/api/obmann/ausschuesse", headers=headers).status_code == 403
+
+
 def test_users_als_super_admin_ok(anon_client, super_admin):
     headers = login(anon_client, "admin@test.local", "admin123")
     r = anon_client.get("/api/users", headers=headers)
@@ -82,10 +116,11 @@ def test_users_als_super_admin_ok(anon_client, super_admin):
     assert len(r.json()) == 1
 
     r = anon_client.post("/api/users", headers=headers, json={
-        "email": "neu@test.local", "vorname": "Neu", "nachname": "User"})
+        "email": "neu@test.local", "vorname": "Neu", "nachname": "User",
+        "rolle": "sekretariat"})
     assert r.status_code == 200
     assert "temp_password" in r.json()
-
+    assert r.json()["rolle"] == "sekretariat"
 
 def test_user_update_obmann_ausschuesse(anon_client, super_admin, obmann, ausschuesse):
     a1, _ = ausschuesse

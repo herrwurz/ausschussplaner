@@ -191,6 +191,7 @@ class BerechnungRequest(BaseModel):
     min_verfuegbarkeit: int = 100  # 0-100, nur Termine mit mind. dieser Quote
     start_datum: date | None = None  # Montag der ersten Planungswoche; aktiviert Abwesenheits-Check
     max_ausschuesse_pro_tag: int = 2  # Maximum Ausschüsse pro Wochentag
+    fruehester_start: str | None = None  # optional "HH:MM", z. B. "19:00" für STR/GR
 
 
 class MitgliedDetail(BaseModel):

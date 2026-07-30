@@ -20,6 +20,8 @@ export default function Terminberechnung() {
   // 0 = alle Termine anzeigen; 100 würde alles außer Volltreffern wegfiltern
   const [minVerfuegbarkeit, setMinVerfuegbarkeit] = useState(100)
   const [maxAnzahlTermine, setMaxAnzahlTermine] = useState(1)
+  // Leer = alle Slots; "19:00" z. B. für STR/GR (nie vor 19 Uhr)
+  const [fruehesterStart, setFruehesterStart] = useState('')
 
   useEffect(() => {
     if (selectedPeriodeId) {
@@ -45,6 +47,12 @@ export default function Terminberechnung() {
   // Bei Wechsel der Sitzungsart (oder neuen Ausschüssen) automatisch alle passenden wählen
   useEffect(() => {
     setSelectedAusschussIds(filterBySitzungsart(ausschuesse, sitzungsart).map(a => a.id))
+    // STR/GR beginnen nie vor 19:00 — Default setzen, für Ausschüsse zurücksetzen
+    if (sitzungsart === 'stadtrat' || sitzungsart === 'gemeinderat') {
+      setFruehesterStart('19:00')
+    } else if (sitzungsart === 'ausschuesse') {
+      setFruehesterStart('')
+    }
   }, [ausschuesse, sitzungsart])
 
   const handleCalculate = async (e) => {
@@ -56,7 +64,6 @@ export default function Terminberechnung() {
       // Lade fixierte Termine VOR der Berechnung
       const fixRes = await api.get('/calculate/results')
       setFixierteTermine(fixRes.data || [])
-      console.log('Geladene fixierte Termine:', fixRes.data)
 
       const payload = {
         ausschuss_ids: selectedAusschussIds.length > 0 ? selectedAusschussIds : null,
@@ -66,11 +73,10 @@ export default function Terminberechnung() {
         max_alternativen: maxAnzahlTermine,
         min_verfuegbarkeit: minVerfuegbarkeit,
         start_datum: startDatum || null,
+        fruehester_start: fruehesterStart || null,
       }
 
-      console.log('DEBUG PAYLOAD:', payload)
       const res = await api.post('/calculate', payload)
-      console.log('DEBUG RESPONSE analysen[0].top_termine count:', res.data.analysen?.[0]?.top_termine?.length)
       setResults(res.data)
       setShowResults(true)
     } catch (err) {
@@ -249,6 +255,34 @@ export default function Terminberechnung() {
               />
               <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
                 Montag der ersten Planungswoche (mit Abwesenheits-Check)
+              </p>
+            </div>
+
+            {/* Frühester Start */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
+                Frühester Sitzungsbeginn (optional):
+              </label>
+              <select
+                value={fruehesterStart}
+                onChange={(e) => setFruehesterStart(e.target.value)}
+                style={{
+                  padding: '0.5rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  fontSize: '0.95rem',
+                  width: '100%',
+                  maxWidth: '250px',
+                }}
+              >
+                <option value="">Alle Zeiten (07:00 / ab 16:00)</option>
+                <option value="16:00">Ab 16:00</option>
+                <option value="17:00">Ab 17:00</option>
+                <option value="18:00">Ab 18:00</option>
+                <option value="19:00">Ab 19:00</option>
+              </select>
+              <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
+                Für Stadtrat/Gemeinderat standardmäßig 19:00 — frühere Slots (z.&nbsp;B. 17:00) werden nicht vorgeschlagen.
               </p>
             </div>
 

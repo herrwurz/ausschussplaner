@@ -65,7 +65,15 @@ export default function AdminLayout({
       pageTitle={PAGE_TITLES[activeTab] || 'Admin'}
       crumbPrefix="Admin"
       user={user}
-      userRoleLabel={isSuperAdmin ? 'Super Admin' : undefined}
+      userRoleLabel={
+        isSuperAdmin
+          ? 'Super Admin'
+          : user.rolle === 'sekretariat'
+            ? 'Sekretariat'
+            : user.rolle === 'benutzer'
+              ? 'Benutzer'
+              : undefined
+      }
       onLogout={onLogout}
       showPeriodSwitcher
     >

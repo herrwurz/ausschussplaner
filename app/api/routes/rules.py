@@ -4,9 +4,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_staff
+from app.api.deps import require_staff, require_super_admin
 from app.db.base import get_db
-from app.models.models import Sitzungsregel
+from app.models.models import Sitzungsregel, User
 from app.schemas.schemas import SitzungsregelBase, SitzungsregelOut
 
 router = APIRouter(
@@ -32,7 +32,12 @@ def get_rules(db: Session = Depends(get_db)):
 
 
 @router.put("", response_model=SitzungsregelOut)
-def update_rules(payload: SitzungsregelBase, db: Session = Depends(get_db)):
+def update_rules(
+    payload: SitzungsregelBase,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_super_admin),
+):
+    """Sitzungsregeln ändern — nur Super-Admin (nicht Sekretariat)."""
     regel = _get_or_create(db)
     for k, v in payload.model_dump().items():
         setattr(regel, k, v)
