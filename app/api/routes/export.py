@@ -11,7 +11,11 @@ from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Person, Sitzungsvorschlag
 from app.services.ics_service import build_sitzungen_ics
-from app.services.pdf_forms import FormPerson, build_gr_erhebungsbogen_pdf
+from app.services.pdf_forms import (
+    FormPerson,
+    build_abwesenheit_formular_pdf,
+    build_verfuegbarkeit_formular_pdf,
+)
 from app.services.pdf_service import load_ausschuss_namen
 
 router = APIRouter(
@@ -37,15 +41,17 @@ def _active_form_persons(db: Session) -> list[FormPerson]:
     ]
 
 
-@router.get("/formular/erhebung.pdf")
-def export_erhebungsbogen(
-    periode: str | None = Query(None, description="Optionaler Perioden-Text auf dem Formular"),
+@router.get("/formular/verfuegbarkeit.pdf")
+def export_verfuegbarkeit_formular(
+    periode: str | None = Query(None, description="Optionaler Perioden-Text"),
     db: Session = Depends(get_db),
 ):
-    """Ein GR-Erhebungsbogen: Name | Abwesenheit | Verfügbarkeits-Uhrzeiten."""
-    personen = _active_form_persons(db)
-    pdf = build_gr_erhebungsbogen_pdf(personen, periode_label=periode or "")
-    filename = f"erhebungsbogen_{date.today().isoformat()}.pdf"
+    """PDF Verfügbarkeit: Name | Uhrzeiten (alle aktiven Personen)."""
+    pdf = build_verfuegbarkeit_formular_pdf(
+        _active_form_persons(db),
+        periode_label=periode or "",
+    )
+    filename = f"formular_verfuegbarkeit_{date.today().isoformat()}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -53,20 +59,21 @@ def export_erhebungsbogen(
     )
 
 
-# Aliase für bestehende Frontend-Links
-@router.get("/formular/verfuegbarkeit.pdf")
 @router.get("/formular/abwesenheit.pdf")
-def export_erhebungsbogen_alias(
-    periode: str | None = Query(None),
-    mit_namen: bool = Query(True),  # ignoriert — immer alle aktiven Personen
-    db: Session = Depends(get_db),
-):
-    return export_erhebungsbogen(periode=periode, db=db)
+def export_abwesenheit_formular(db: Session = Depends(get_db)):
+    """PDF Abwesenheit: Name | leere Zeile (alle aktiven Personen)."""
+    pdf = build_abwesenheit_formular_pdf(_active_form_persons(db))
+    filename = f"formular_abwesenheit_{date.today().isoformat()}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/sitzungen.ics")
 def export_sitzungen_ics(db: Session = Depends(get_db)):
-    """ICS-Kalender aller fixierten Sitzungstermine (für Outlook/Google Kalender)."""
+    """ICS-Kalender aller fixierten Sitzungstermine."""
     rows = (
         db.query(Sitzungsvorschlag)
         .order_by(Sitzungsvorschlag.woche, Sitzungsvorschlag.wochentag, Sitzungsvorschlag.start_minute)

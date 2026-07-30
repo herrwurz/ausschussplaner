@@ -162,14 +162,14 @@ export default function Abwesenheiten() {
             onClick={async () => {
               try {
                 setError('')
-                const res = await api.get('/export/formular/erhebung.pdf', {
+                const res = await api.get('/export/formular/abwesenheit.pdf', {
                   responseType: 'blob',
                 })
                 const blob = new Blob([res.data], { type: 'application/pdf' })
                 const url = window.URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = `erhebungsbogen_${new Date().toISOString().slice(0, 10)}.pdf`
+                a.download = `formular_abwesenheit_${new Date().toISOString().slice(0, 10)}.pdf`
                 document.body.appendChild(a)
                 a.click()
                 a.remove()
@@ -178,9 +178,9 @@ export default function Abwesenheiten() {
                 setError(`PDF-Download fehlgeschlagen: ${err.message}`)
               }
             }}
-            title="Ein Formular: alle Namen | Abwesenheit | Uhrzeiten – zum Verteilen in der GR"
+            title="Formular: Name | leere Zeile – zum Verteilen in der GR"
           >
-            📄 Erhebungsbogen (GR)
+            📄 Formular Abwesenheit
           </button>
           <button className="btn btn-primary" onClick={handleShowForm}>
             + Abwesenheit hinzufügen

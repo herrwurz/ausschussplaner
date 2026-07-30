@@ -166,7 +166,7 @@ export default function Verfuegbarkeiten() {
 
   const person = persons.find(p => String(p.id) === String(selectedPerson))
 
-  const downloadErhebungsbogen = async () => {
+  const downloadVerfuegbarkeitFormular = async () => {
     try {
       setMessage('')
       const params = {}
@@ -174,7 +174,7 @@ export default function Verfuegbarkeiten() {
         const p = perioden.find((x) => String(x.id) === String(selectedPeriode))
         if (p) params.periode = `${p.name} (${p.start_jahr}–${p.end_jahr})`
       }
-      const res = await api.get('/export/formular/erhebung.pdf', {
+      const res = await api.get('/export/formular/verfuegbarkeit.pdf', {
         params,
         responseType: 'blob',
       })
@@ -182,12 +182,12 @@ export default function Verfuegbarkeiten() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `erhebungsbogen_${new Date().toISOString().slice(0, 10)}.pdf`
+      a.download = `formular_verfuegbarkeit_${new Date().toISOString().slice(0, 10)}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
-      setMessage('✅ Erhebungsbogen heruntergeladen')
+      setMessage('✅ Verfügbarkeits-Formular heruntergeladen')
       setTimeout(() => setMessage(''), 3000)
     } catch (err) {
       setMessage(`❌ PDF-Download fehlgeschlagen: ${err.message}`)
@@ -201,10 +201,10 @@ export default function Verfuegbarkeiten() {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={downloadErhebungsbogen}
-          title="Ein Formular: alle Namen | Abwesenheit | Uhrzeiten – zum Verteilen in der GR"
+          onClick={downloadVerfuegbarkeitFormular}
+          title="Formular: Name | Uhrzeiten – zum Verteilen in der GR"
         >
-          📄 Erhebungsbogen (GR)
+          📄 Formular Verfügbarkeit
         </button>
       </div>
 
