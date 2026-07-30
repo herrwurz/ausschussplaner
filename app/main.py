@@ -97,6 +97,15 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    if settings.sync_verfuegbarkeiten_on_start:
+        try:
+            from sync_verfuegbarkeiten import sync_verfuegbarkeiten
+
+            print("Sync Verfuegbarkeiten aus realdata.json ...")
+            sync_verfuegbarkeiten(fix=True)
+        except Exception as err:
+            print(f"WARNUNG: Verfuegbarkeiten-Sync fehlgeschlagen: {err}")
+
     yield
 
 

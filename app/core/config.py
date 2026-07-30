@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     admin_email: str = "admin@ausschussplaner.local"
     admin_password: str | None = None
 
+    # Beim Start Standardverfügbarkeiten aus realdata.json übernehmen
+    # (wie start-dev.bat). Auf false setzen, sobald Admin-Pflege Vorrang hat.
+    sync_verfuegbarkeiten_on_start: bool = True
+
     # Email (SMTP für Einladungen)
     smtp_server: str = "smtp.gmail.com"
     smtp_port: int = 587
