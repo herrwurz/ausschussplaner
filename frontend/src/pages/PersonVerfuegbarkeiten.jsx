@@ -2,11 +2,19 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import api from '../api/client'
 
-const HOURS = Array.from({ length: 13 }, (_, i) => 7 + i)
-const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+// Gleiches Raster wie Admin / Engine (Mo–Fr, relevante volle Stunden)
+const HOURS = [7, 16, 17, 18, 19]
+const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr']
+const hourLabel = (h) => `${String(h).padStart(2, '0')}:00`
+
+const emptyMatrix = () => {
+  const m = {}
+  DAYS.forEach((day) => HOURS.forEach((hour) => { m[`${day}-${hour}`] = false }))
+  return m
+}
 
 export default function PersonVerfuegbarkeiten() {
-  const [availability, setAvailability] = useState({})
+  const [availability, setAvailability] = useState(emptyMatrix())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -21,14 +29,15 @@ export default function PersonVerfuegbarkeiten() {
 
     const fetchAvailability = async () => {
       try {
-        const res = await api.get('/person/me/verfuegbarkeiten', {
-          headers: { Authorization: `Bearer ${token}` }
+        const res = await api.get('/person/me/verfuegbarkeiten')
+        const matrix = emptyMatrix()
+        const dayMap = { MO: 'Mo', DI: 'Di', MI: 'Mi', DO: 'Do', FR: 'Fr' }
+        ;(res.data || []).forEach((v) => {
+          const day = dayMap[v.wochentag] || v.wochentag
+          const key = `${day}-${Number(v.stunde)}`
+          if (key in matrix && v.verfuegbar) matrix[key] = true
         })
-        const items = {}
-        res.data.forEach((v) => {
-          items[`${v.wochentag}-${v.stunde}`] = v.verfuegbar
-        })
-        setAvailability(items)
+        setAvailability(matrix)
       } catch (err) {
         if (err.response?.status === 401) {
           navigate('/person/login')
@@ -50,28 +59,22 @@ export default function PersonVerfuegbarkeiten() {
 
   const handleSave = async () => {
     setSaving(true)
-    const token = localStorage.getItem('personToken')
-
+    setMessage('')
     const items = []
     DAYS.forEach((day) => {
       HOURS.forEach((hour) => {
-        const key = `${day}-${hour}`
-        items.push({
-          wochentag: day,
-          stunde: hour,
-          verfuegbar: availability[key] || false,
-        })
+        if (availability[`${day}-${hour}`]) {
+          items.push({ wochentag: day, stunde: hour, verfuegbar: true })
+        }
       })
     })
 
     try {
-      await api.put('/person/me/verfuegbarkeiten', { items }, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await api.put('/person/me/verfuegbarkeiten', { items })
       setMessage('Verfügbarkeiten gespeichert!')
       setTimeout(() => setMessage(''), 3000)
     } catch (err) {
-      setMessage('Fehler beim Speichern')
+      setMessage(err.response?.data?.detail || 'Fehler beim Speichern')
     } finally {
       setSaving(false)
     }
@@ -80,60 +83,62 @@ export default function PersonVerfuegbarkeiten() {
   if (loading) return <div className="alert alert-info">Lädt...</div>
 
   return (
-    <div className="container mt-5">
-      <Link to="/person/dashboard" className="btn btn-secondary mb-3">
-        ← Zurück zum Dashboard
-      </Link>
-      <h1>Meine Verfügbarkeiten</h1>
-
-      {message && <div className="alert alert-info">{message}</div>}
-
-      <div className="card p-3 mb-4">
-        <div className="table-responsive">
-          <table className="table table-sm table-bordered">
-            <thead>
-              <tr>
-                <th>Stunde</th>
-                {DAYS.map((day) => (
-                  <th key={day} className="text-center">{day}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {HOURS.map((hour) => (
-                <tr key={hour}>
-                  <td><strong>{hour}:00</strong></td>
-                  {DAYS.map((day) => (
-                    <td
-                      key={`${day}-${hour}`}
-                      className="text-center p-2"
-                      style={{
-                        cursor: 'pointer',
-                        backgroundColor: availability[`${day}-${hour}`] ? '#d4edda' : '#f8f9fa',
-                      }}
-                      onClick={() => toggleAvailability(day, hour)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={availability[`${day}-${hour}`] || false}
-                        readOnly
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <button
-          className="btn btn-primary"
-          onClick={handleSave}
-          disabled={saving}
-        >
-          {saving ? 'Speichert...' : 'Speichern'}
-        </button>
+    <div className="container mt-4">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h2>Meine Verfügbarkeiten</h2>
+        <Link to="/person/dashboard" className="btn btn-secondary">Zurück</Link>
       </div>
+
+      <p className="text-muted" style={{ fontSize: '0.9rem' }}>
+        Standardverfügbarkeit Mo–Fr für die Sitzungszeiten (07:00 sowie 16:00–19:00).
+        Perioden-spezifische Overrides setzt der Admin.
+      </p>
+
+      {message && (
+        <div className={`alert ${message.includes('Fehler') ? 'alert-danger' : 'alert-success'}`}>
+          {message}
+        </div>
+      )}
+
+      <div className="table-responsive">
+        <table className="table table-bordered text-center">
+          <thead>
+            <tr>
+              <th></th>
+              {HOURS.map((h) => (
+                <th key={h}>{hourLabel(h)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {DAYS.map((day) => (
+              <tr key={day}>
+                <th>{day}</th>
+                {HOURS.map((hour) => {
+                  const key = `${day}-${hour}`
+                  const on = !!availability[key]
+                  return (
+                    <td key={key}>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${on ? 'btn-success' : 'btn-outline-secondary'}`}
+                        onClick={() => toggleAvailability(day, hour)}
+                        aria-pressed={on}
+                      >
+                        {on ? '✓' : '–'}
+                      </button>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+        {saving ? 'Speichert…' : 'Speichern'}
+      </button>
     </div>
   )
 }

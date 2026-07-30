@@ -1,6 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import './styles/App.css'
-import CentralLogin from './pages/CentralLogin'
 import PersonLogin from './pages/PersonLogin'
 import PersonSetPassword from './pages/PersonSetPassword'
 import PersonDashboard from './pages/PersonDashboard'
@@ -10,45 +9,38 @@ import PersonVerfuegbarkeiten from './pages/PersonVerfuegbarkeiten'
 import PersonAbsences from './pages/PersonAbsences'
 import PersonCommittees from './pages/PersonCommittees'
 import PersonSitzungen from './pages/PersonSitzungen'
-import TestDashboard from './pages/TestDashboard'
 import AdminLogin from './pages/AdminLogin'
 import AdminPanel from './pages/AdminPanel'
 import ObmannDashboard from './pages/ObmannDashboard'
 import ProtectedRoute from './components/ProtectedRoute'
+
+function AdminPanelRoute() {
+  return (
+    <ProtectedRoute requiredRole="admin">
+      <AdminPanel />
+    </ProtectedRoute>
+  )
+}
 
 function AppLayout() {
   return (
     <div className="app-layout">
       <main className="content">
         <Routes>
-          {/* Central Login - used by both Admin and Person */}
-          <Route path="/login" element={<CentralLogin />} />
-
-          {/* Admin Panel - React-based admin UI (nur für Admins) */}
           <Route path="/admin" element={<Navigate to="/admin/login" replace />} />
           <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/panel" element={
-            <ProtectedRoute requiredRole="admin">
-              <AdminPanel />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/personen" element={
-            <ProtectedRoute requiredRole="admin">
-              <AdminPanel />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/perioden" element={
-            <ProtectedRoute requiredRole="admin">
-              <AdminPanel />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/ausschuesse" element={
-            <ProtectedRoute requiredRole="admin">
-              <AdminPanel />
-            </ProtectedRoute>
-          } />
+          <Route path="/admin/panel" element={<AdminPanelRoute />} />
+          <Route path="/admin/benutzer" element={<AdminPanelRoute />} />
+          <Route path="/admin/personen" element={<AdminPanelRoute />} />
+          <Route path="/admin/perioden" element={<AdminPanelRoute />} />
+          <Route path="/admin/ausschuesse" element={<AdminPanelRoute />} />
+          <Route path="/admin/mitgliedschaften" element={<AdminPanelRoute />} />
+          <Route path="/admin/termine-berechnung" element={<AdminPanelRoute />} />
+          <Route path="/admin/fixierte-termine" element={<AdminPanelRoute />} />
+          <Route path="/admin/abwesenheiten" element={<AdminPanelRoute />} />
+          <Route path="/admin/verfuegbarkeiten" element={<AdminPanelRoute />} />
+          <Route path="/admin/sitzungsregeln" element={<AdminPanelRoute />} />
 
-          {/* Obmann Dashboard (nur für Obmänner) */}
           <Route path="/obmann" element={<Navigate to="/obmann/dashboard" replace />} />
           <Route path="/obmann/dashboard" element={
             <ProtectedRoute requiredRole="obmann">
@@ -56,11 +48,6 @@ function AppLayout() {
             </ProtectedRoute>
           } />
 
-          {/* Test Dashboard - View all data from API */}
-          <Route path="/test" element={<TestDashboard />} />
-
-
-          {/* Person Portal Routes */}
           <Route path="/person" element={<Navigate to="/person/login" replace />} />
           <Route path="/person/login" element={<PersonLogin />} />
           <Route path="/person/set-password" element={<PersonSetPassword />} />
@@ -72,7 +59,7 @@ function AppLayout() {
           <Route path="/person/committees" element={<PersonCommittees />} />
           <Route path="/person/sitzungen" element={<PersonSitzungen />} />
 
-          {/* Default redirect to admin login */}
+          <Route path="/login" element={<Navigate to="/admin/login" replace />} />
           <Route path="/" element={<Navigate to="/admin/login" replace />} />
         </Routes>
       </main>

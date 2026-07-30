@@ -314,14 +314,14 @@ def test_set_password_invalid_token(client):
 def test_set_password_expired_token(client, db_session):
     """Test: Set-Password mit abgelaufenem Token schlägt fehl."""
     from app.models.models import Person
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     person = Person(
         vorname="Test",
         nachname="Expired",
         email="expired@example.com",
         invite_token="expired_token",
-        invite_expires=datetime.utcnow() - timedelta(hours=1),  # vor 1 Stunde abgelaufen
+        invite_expires=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1),  # vor 1 Stunde abgelaufen
         aktiv=True,
     )
     db_session.add(person)

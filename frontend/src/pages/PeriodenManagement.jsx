@@ -4,7 +4,6 @@ import api from '../api/client'
 export default function PeriodenManagement() {
   const [perioden, setPerioden] = useState([])
   const [ausschuessPerPeriode, setAusschuessPerPeriode] = useState({})
-  const [allAusschuesse, setAllAusschuesse] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -13,7 +12,6 @@ export default function PeriodenManagement() {
     name: '',
     start_jahr: new Date().getFullYear(),
     end_jahr: new Date().getFullYear() + 4,
-    ausschuss_ids: [],
   })
 
   useEffect(() => {
@@ -23,21 +21,15 @@ export default function PeriodenManagement() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      // Lade Perioden
       const periRes = await api.get('/perioden')
       setPerioden(periRes.data)
 
-      // Lade Ausschüsse pro Periode
       const ausschuessMap = {}
       for (const periode of periRes.data) {
         const ausRes = await api.get('/committees', { params: { periode_id: periode.id } })
         ausschuessMap[periode.id] = ausRes.data
       }
       setAusschuessPerPeriode(ausschuessMap)
-
-      // Lade alle Ausschüsse (für Zuordnungs-Dropdown)
-      const allRes = await api.get('/committees')
-      setAllAusschuesse(allRes.data)
     } catch (err) {
       setError('Daten laden fehlgeschlagen')
       console.error(err)
@@ -47,12 +39,10 @@ export default function PeriodenManagement() {
   }
 
   const handleEdit = (periode) => {
-    const ausIds = (ausschuessPerPeriode[periode.id] || []).map(a => a.id)
     setFormData({
       name: periode.name,
       start_jahr: periode.start_jahr,
       end_jahr: periode.end_jahr,
-      ausschuss_ids: ausIds,
     })
     setEditingId(periode.id)
     setShowForm(true)
@@ -62,68 +52,35 @@ export default function PeriodenManagement() {
     e.preventDefault()
     try {
       if (editingId) {
-        // Update Periode
         await api.patch(`/perioden/${editingId}`, {
           name: formData.name,
           start_jahr: formData.start_jahr,
           end_jahr: formData.end_jahr,
         })
-        // Update Ausschuss-Zuordnungen
-        await updateAusschuessZuordnung(editingId, formData.ausschuss_ids)
       } else {
-        // Create Periode
-        const res = await api.post('/perioden', {
+        await api.post('/perioden', {
           name: formData.name,
           start_jahr: formData.start_jahr,
           end_jahr: formData.end_jahr,
         })
-        // Zuordne Ausschüsse
-        await updateAusschuessZuordnung(res.data.id, formData.ausschuss_ids)
       }
       setShowForm(false)
       setEditingId(null)
-      setFormData({ name: '', start_jahr: new Date().getFullYear(), end_jahr: new Date().getFullYear() + 4, ausschuss_ids: [] })
+      setFormData({ name: '', start_jahr: new Date().getFullYear(), end_jahr: new Date().getFullYear() + 4 })
       fetchData()
     } catch (err) {
       setError(err.response?.data?.detail || 'Fehler beim Speichern')
     }
   }
 
-  const updateAusschuessZuordnung = async (periodeId, ausschussIds) => {
-    try {
-      // Hole aktuelle Ausschüsse dieser Periode
-      const current = ausschuessPerPeriode[periodeId] || []
-      const currentIds = current.map(a => a.id)
-
-      // Zu löschende Ausschüsse (waren drin, sollen aber weg)
-      for (const id of currentIds) {
-        if (!ausschussIds.includes(id)) {
-          // Entferne Periode von diesem Ausschuss
-          await api.patch(`/committees/${id}`, { periode_id: null })
-        }
-      }
-
-      // Zu hinzufügende Ausschüsse (sollen drin, waren aber nicht drin)
-      for (const id of ausschussIds) {
-        if (!currentIds.includes(id)) {
-          // Weise Periode zu
-          await api.patch(`/committees/${id}`, { periode_id: periodeId })
-        }
-      }
-    } catch (err) {
-      console.error('Fehler bei Ausschuss-Zuordnung:', err)
-      throw err
-    }
-  }
-
   const handleCancel = () => {
     setShowForm(false)
     setEditingId(null)
-    setFormData({ name: '', start_jahr: new Date().getFullYear(), end_jahr: new Date().getFullYear() + 4, ausschuss_ids: [] })
+    setFormData({ name: '', start_jahr: new Date().getFullYear(), end_jahr: new Date().getFullYear() + 4 })
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Periode wirklich löschen?')) return
+    if (!window.confirm('Periode wirklich löschen? Zugehörige Ausschüsse werden mitgelöscht.')) return
     try {
       await api.delete(`/perioden/${id}`)
       fetchData()
@@ -170,46 +127,9 @@ export default function PeriodenManagement() {
             />
           </div>
 
-          {/* Ausschuss-Zuordnung */}
-          <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e5e7eb' }}>
-            <label style={{ fontWeight: '600', marginBottom: '0.75rem', display: 'block' }}>
-              Ausschüsse für diese Periode:
-            </label>
-            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #d1d5db', borderRadius: '4px', padding: '0.75rem' }}>
-              {allAusschuesse.length === 0 ? (
-                <p style={{ color: '#999', fontSize: '0.9rem' }}>Keine Ausschüsse verfügbar</p>
-              ) : (
-                allAusschuesse.map((ausschuss) => (
-                  <div key={ausschuss.id} style={{ marginBottom: '0.5rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.ausschuss_ids.includes(ausschuss.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData({
-                              ...formData,
-                              ausschuss_ids: [...formData.ausschuss_ids, ausschuss.id]
-                            })
-                          } else {
-                            setFormData({
-                              ...formData,
-                              ausschuss_ids: formData.ausschuss_ids.filter(id => id !== ausschuss.id)
-                            })
-                          }
-                        }}
-                        style={{ marginRight: '0.5rem' }}
-                      />
-                      <span>{ausschuss.name}</span>
-                    </label>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '1rem' }}>
-            Eine Periode umfasst 5 Jahre und hat die gleichen Ausschüsse für alle Jahre dieser Periode.
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted, #666)', marginTop: '1rem' }}>
+            Ausschüsse gehören fest zu einer Periode. Für eine neue Periode Ausschüsse unter
+            „Ausschüsse“ mit „Für Periode kopieren“ anlegen (ohne Mitgliedschaften).
           </p>
           <div className="form-buttons">
             <button type="submit" className="btn btn-success">
@@ -226,7 +146,7 @@ export default function PeriodenManagement() {
         <p>Lädt...</p>
       ) : perioden.length === 0 ? (
         <div className="alert alert-info">
-          <p>Keine Gemeinderatsperioden vorhanden. <a href="#" onClick={() => setShowForm(true)}>Erstellen Sie eine neue Periode</a>.</p>
+          <p>Keine Gemeinderatsperioden vorhanden.</p>
         </div>
       ) : (
         <div className="table-responsive">
@@ -254,7 +174,7 @@ export default function PeriodenManagement() {
                         <span>{ausschuesse.length} Ausschüsse</span>
                       )}
                     </td>
-                    <td>{periode.aktiv ? '✅ Aktiv' : '❌ Inaktiv'}</td>
+                    <td>{periode.aktiv ? 'Aktiv' : 'Inaktiv'}</td>
                     <td className="actions">
                       <button className="btn btn-sm btn-warning" onClick={() => handleEdit(periode)}>
                         Edit

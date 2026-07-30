@@ -1,27 +1,24 @@
 """Person Portal - Login und Selbstverwaltung."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.security import create_access_token, verify_password, hash_password
+from app.core.security import create_access_token, verify_password, hash_password, decode_token
 from app.db.base import get_db
 from app.models.models import Person, Verfuegbarkeit, Abwesenheit, Mitgliedschaft
-from app.models.enums import Wochentag
 from app.schemas.schemas import PersonOut, VerfuegbarkeitBulk, AbwesenheitCreate, AbwesenheitOut
-from fastapi import Header
 
 router = APIRouter(prefix="/person", tags=["Person Portal"])
 
 
 def get_current_person(authorization: str = Header(None), db: Session = Depends(get_db)) -> Person:
     """Validiere JWT Token und gib aktuelle Person zurück."""
-    from app.core.security import decode_token
-
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid token")
 
-    token = authorization.split(" ")[1]
+    token = authorization.split(" ", 1)[1]
     payload = decode_token(token)
     if not payload or "person_id" not in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -30,19 +27,6 @@ def get_current_person(authorization: str = Header(None), db: Session = Depends(
     if not person:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
     return person
-
-
-class LoginRequest:
-    def __init__(self, email: str, password: str):
-        self.email = email
-        self.password = password
-
-
-class LoginRequest:
-    def __init__(self, email: str, password: str):
-        self.email = email
-        self.password = password
-
 
 @router.post("/login")
 async def login(email: str = None, password: str = None, db: Session = Depends(get_db)):
@@ -65,8 +49,6 @@ def get_me(person: Person = Depends(get_current_person)):
     """Hole Profildaten der aktuellen Person."""
     return person
 
-
-from pydantic import BaseModel
 
 class ProfileUpdateRequest(BaseModel):
     vorname: str | None = None
@@ -137,28 +119,37 @@ def set_verfuegbarkeiten(
     person: Person = Depends(get_current_person),
     db: Session = Depends(get_db),
 ):
-    """Setze Verfügbarkeiten (Matrix)."""
-    # Lösche alte Einträge
-    db.query(Verfuegbarkeit).filter(Verfuegbarkeit.person_id == person.id).delete()
+    """Setze die Standardverfügbarkeit (periode_id=NULL). Perioden-Overrides bleiben erhalten."""
+    db.query(Verfuegbarkeit).filter(
+        Verfuegbarkeit.person_id == person.id,
+        Verfuegbarkeit.periode_id.is_(None),
+    ).delete()
 
-    # Speichere neue
     for item in bulk.items:
-        v = Verfuegbarkeit(
+        if not item.verfuegbar:
+            continue  # nur positive Einträge speichern (wie Admin-API)
+        db.add(Verfuegbarkeit(
             person_id=person.id,
+            periode_id=None,
             wochentag=item.wochentag,
             stunde=item.stunde,
-            verfuegbar=item.verfuegbar,
-        )
-        db.add(v)
+            verfuegbar=True,
+        ))
 
     db.commit()
-    return db.query(Verfuegbarkeit).filter(Verfuegbarkeit.person_id == person.id).all()
+    return db.query(Verfuegbarkeit).filter(
+        Verfuegbarkeit.person_id == person.id,
+        Verfuegbarkeit.periode_id.is_(None),
+    ).all()
 
 
 @router.get("/me/verfuegbarkeiten")
 def get_verfuegbarkeiten(person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
-    """Hole Verfügbarkeiten der aktuellen Person."""
-    return db.query(Verfuegbarkeit).filter(Verfuegbarkeit.person_id == person.id).all()
+    """Hole die Standardverfügbarkeit der aktuellen Person."""
+    return db.query(Verfuegbarkeit).filter(
+        Verfuegbarkeit.person_id == person.id,
+        Verfuegbarkeit.periode_id.is_(None),
+    ).all()
 
 
 @router.post("/me/absences", response_model=AbwesenheitOut)
@@ -168,6 +159,11 @@ def create_absence(
     db: Session = Depends(get_db),
 ):
     """Trage eine Abwesenheit für dich selbst ein."""
+    if req.bis < req.von:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enddatum muss nach dem Startdatum liegen",
+        )
     absence = Abwesenheit(
         person_id=person.id,
         von=req.von,
@@ -194,7 +190,6 @@ def get_my_absences(person: Person = Depends(get_current_person), db: Session = 
 @router.get("/me/committees")
 def get_my_committees(person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
     """Hole meine Ausschuss-Mitgliedschaften."""
-    from app.schemas.schemas import MitgliedOut, AusschussOut
     memberships = db.query(Mitgliedschaft).filter(Mitgliedschaft.person_id == person.id).all()
     result = []
     for m in memberships:
@@ -205,6 +200,26 @@ def get_my_committees(person: Person = Depends(get_current_person), db: Session 
             "rolle": m.rolle,
         })
     return result
+
+
+@router.get("/me/sitzungen")
+def get_my_sitzungen(person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
+    """Fixierte Sitzungstermine der eigenen Ausschüsse."""
+    from app.models.models import Sitzungsvorschlag
+    from app.schemas.schemas import SitzungsvorschlagOut
+
+    ausschuss_ids = [
+        m.ausschuss_id
+        for m in db.query(Mitgliedschaft).filter(Mitgliedschaft.person_id == person.id).all()
+    ]
+    if not ausschuss_ids:
+        return []
+    rows = (
+        db.query(Sitzungsvorschlag)
+        .filter(Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids))
+        .all()
+    )
+    return [SitzungsvorschlagOut.model_validate(r) for r in rows]
 
 
 @router.get("/me/dashboard")
@@ -241,13 +256,14 @@ def get_dashboard(person: Person = Depends(get_current_person), db: Session = De
 @router.post("/set-password")
 def set_password(token: str, new_password: str, db: Session = Depends(get_db)):
     """Setze Passwort mit Einladungs-Token."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     person = db.query(Person).filter(Person.invite_token == token).first()
     if not person:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid token")
 
-    if not person.invite_expires or datetime.utcnow() > person.invite_expires:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not person.invite_expires or now > person.invite_expires:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Token expired")
 
     person.password_hash = hash_password(new_password)

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Ausschuss, Mitgliedschaft, Person
 from app.schemas.schemas import (
@@ -14,7 +15,11 @@ from app.schemas.schemas import (
     MitgliedOut,
 )
 
-router = APIRouter(prefix="/committees", tags=["Ausschüsse"])
+router = APIRouter(
+    prefix="/committees",
+    tags=["Ausschüsse"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 def _to_out(a: Ausschuss) -> AusschussOut:
@@ -24,6 +29,7 @@ def _to_out(a: Ausschuss) -> AusschussOut:
         typ=a.typ,
         turnus=a.turnus,
         aktiv=a.aktiv,
+        periode_id=a.periode_id,
         mitglieder=[
             MitgliedOut(person_id=ms.person_id, rolle=ms.rolle, name=ms.person.name)
             for ms in a.mitgliedschaften
@@ -58,7 +64,12 @@ def create_committee(payload: AusschussCreate, periode_id: int | None = None, db
     for m in payload.mitglieder:
         if db.get(Person, m.person_id) is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Person {m.person_id} fehlt")
-        db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=m.person_id, rolle=m.rolle))
+        db.add(Mitgliedschaft(
+            ausschuss_id=a.id,
+            person_id=m.person_id,
+            rolle=m.rolle,
+            periode_id=periode_id,
+        ))
     db.commit()
     db.refresh(a)
     return _to_out(a)
@@ -66,7 +77,12 @@ def create_committee(payload: AusschussCreate, periode_id: int | None = None, db
 
 @router.get("/{committee_id}", response_model=AusschussOut)
 def get_committee(committee_id: int, db: Session = Depends(get_db)):
-    a = db.get(Ausschuss, committee_id)
+    stmt = (
+        select(Ausschuss)
+        .where(Ausschuss.id == committee_id)
+        .options(selectinload(Ausschuss.mitgliedschaften).selectinload(Mitgliedschaft.person))
+    )
+    a = db.scalars(stmt).first()
     if a is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ausschuss nicht gefunden")
     return _to_out(a)
@@ -84,7 +100,12 @@ def update_committee(committee_id: int, payload: AusschussUpdate, db: Session = 
     if mitglieder is not None:
         db.query(Mitgliedschaft).filter(Mitgliedschaft.ausschuss_id == a.id).delete()
         for m in mitglieder:
-            db.add(Mitgliedschaft(ausschuss_id=a.id, person_id=m["person_id"], rolle=m["rolle"]))
+            db.add(Mitgliedschaft(
+                ausschuss_id=a.id,
+                person_id=m["person_id"],
+                rolle=m["rolle"],
+                periode_id=a.periode_id,
+            ))
     db.commit()
     db.refresh(a)
     return _to_out(a)
@@ -93,21 +114,39 @@ def update_committee(committee_id: int, payload: AusschussUpdate, db: Session = 
 @router.post("/{committee_id}/copy-to-period", response_model=AusschussOut, status_code=status.HTTP_201_CREATED)
 def copy_committee_to_period(committee_id: int, target_periode_id: int, db: Session = Depends(get_db)):
     """Kopiere Ausschuss zu neuer Periode (ohne Mitgliedschaften)."""
+    from app.models.models import Gemeinderatsperiode
+
     source = db.get(Ausschuss, committee_id)
     if source is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Quell-Ausschuss nicht gefunden")
 
-    # Überprüfe, ob Periode existiert
-    from app.models.models import Jahresplan
-    periode = db.get(Jahresplan, target_periode_id)
+    periode = db.get(Gemeinderatsperiode, target_periode_id)
     if periode is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ziel-Periode nicht gefunden")
 
-    # Erstelle neuen Ausschuss OHNE Mitgliedschaften
+    if source.periode_id == target_periode_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Ziel-Periode ist identisch mit der Quell-Periode",
+        )
+
+    existing = db.scalars(
+        select(Ausschuss).where(
+            Ausschuss.periode_id == target_periode_id,
+            Ausschuss.name == source.name,
+        )
+    ).first()
+    if existing is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Ausschuss „{source.name}“ existiert bereits in der Ziel-Periode",
+        )
+
+    # Neue Instanz OHNE Mitgliedschaften (Admin setzt Besetzung manuell)
     new_committee = Ausschuss(
         name=source.name,
         typ=source.typ,
-        turnus=str(periode.jahr),  # turnus = Jahr der Periode
+        turnus=f"{periode.start_jahr}-{periode.end_jahr}",
         aktiv=True,
         periode_id=target_periode_id,
     )

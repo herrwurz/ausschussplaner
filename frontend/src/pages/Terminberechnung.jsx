@@ -17,7 +17,7 @@ export default function Terminberechnung() {
   const [showResults, setShowResults] = useState(false)
   const [fixierteTermine, setFixierteTermine] = useState([])
   // 0 = alle Termine anzeigen; 100 würde alles außer Volltreffern wegfiltern
-  const [minVerfuegbarkeit, setMinVerfuegbarkeit] = useState(0)
+  const [minVerfuegbarkeit, setMinVerfuegbarkeit] = useState(100)
   const [maxAnzahlTermine, setMaxAnzahlTermine] = useState(1)
 
   useEffect(() => {
@@ -79,6 +79,7 @@ export default function Terminberechnung() {
 
       const payload = {
         ausschuss_ids: selectedAusschussIds.length > 0 ? selectedAusschussIds : null,
+        periode_id: selectedPeriodeId,
         planungswochen,
         freitag_modus: freitagModus,
         max_alternativen: maxAnzahlTermine,
@@ -409,6 +410,7 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
         wochentag: termin.wochentag,
         start_minute: startMin,
         end_minute: endMin,
+        planungs_start_datum: results.start_datum || null,
       }
       console.log('Fixieren Payload:', payload)
 
@@ -453,20 +455,14 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
     })
   }
 
-  // Generiere 14-Tage-Kalender aus Ergebnissen
+  // Generiere Kalenderwochen aus Ergebnissen (Anzahl = planungswochen)
   const generierteKalendarwochen = () => {
-    console.log('DEBUG: generierteKalendarwochen aufgerufen')
-    console.log('DEBUG: results.analysen count:', results.analysen?.length)
-    console.log('DEBUG: Fixierte Termine beim Kalender-Gen:', fixierteTermine)
-    if (results.analysen && results.analysen[0]) {
-      console.log('DEBUG: First analyse top_termine:', results.analysen[0].top_termine?.length)
-    }
-
     const wochen = []
     const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr']
     const analysen = results.analysen || []
+    const anzahlWochen = results.planungswochen || 2
 
-    for (let w = 1; w <= 2; w++) {
+    for (let w = 1; w <= anzahlWochen; w++) {
       const woche = {
         woche: w,
         tage: {}
@@ -476,20 +472,13 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
       }
 
       for (const analyse of analysen) {
-        // Nutze beste_je_tag (global assigned) - aber nur TOP-Termin (erste Option) pro Ausschuss
+        // Nutze beste_je_tag (global assigned) - nur TOP-Termin (erste Option) pro Ausschuss
         const allTermine = analyse.beste_je_tag || []
-
-        // NUR TOP-Termin (erstes Element) im Kalender anzeigen
         const topTermin = allTermine[0]
         if (!topTermin) continue
-
-        console.log(`DEBUG KALENDER: ${analyse.ausschuss_name} - topTermin.woche=${topTermin.woche}, current w=${w}, all best_je_tag count=${allTermine.length}`)
-
-        // Wichtig: Vergleiche Numbers, nicht Strings
         if (Number(topTermin.woche) !== w) continue
 
         const v = topTermin
-        // Normalisiere wochentag: "Mo", "Di", "Mi", "Do", "Fr"
         let wochentag = v.wochentag || ''
         if (wochentag.includes('Mo')) wochentag = 'Mo'
         else if (wochentag.includes('Di')) wochentag = 'Di'
@@ -512,7 +501,6 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
           wochentag: wochentag,
         }
 
-        // Nur zeigen wenn KEINE Überschneidung mit fixiertem Termin
         if (!hatUeberschneidung(termin) && woche.tage[wochentag]) {
           woche.tage[wochentag].push(termin)
         }
@@ -520,26 +508,90 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
       wochen.push(woche)
     }
 
-    console.log('DEBUG: wochen array count:', wochen.length)
-    for (let i = 0; i < wochen.length; i++) {
-      const w = wochen[i]
-      const tageCount = Object.values(w.tage).reduce((sum, tage) => sum + tage.length, 0)
-      console.log(`DEBUG: Woche ${w.woche}: ${tageCount} Termine`)
-    }
-
     return wochen
   }
 
   const wochen = generierteKalendarwochen()
 
+  const handlePdfExport = async () => {
+    const termine = []
+    for (const woche of wochen) {
+      for (const tag of ['Mo', 'Di', 'Mi', 'Do', 'Fr']) {
+        for (const termin of woche.tage[tag] || []) {
+          termine.push({
+            ausschuss_id: termin.ausschuss_id,
+            ausschuss_name: termin.ausschuss,
+            woche: termin.woche,
+            wochentag: termin.wochentag,
+            start: termin.start,
+            ende: termin.ende,
+            quote: termin.quote ?? null,
+          })
+        }
+      }
+    }
+    if (termine.length === 0) {
+      setMessage('❌ Keine Termine im Wochenplan zum Exportieren')
+      return
+    }
+    try {
+      setMessage('')
+      const res = await api.post(
+        '/calculate/pdf',
+        {
+          titel: periode?.name
+            ? `Sitzungsplan ${periode.name}`
+            : 'Sitzungsplan Ausschüsse',
+          start_datum: results.start_datum || null,
+          termine,
+        },
+        { responseType: 'blob' },
+      )
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `wochenplan_${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      setMessage('✅ PDF heruntergeladen')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      setMessage(`❌ PDF-Export fehlgeschlagen: ${err.response?.status || err.message}`)
+      console.error(err)
+    }
+  }
+
   return (
     <>
       <div className="section-header">
-        <h2>📅 14-Tage Terminkalender</h2>
-        <button className="btn btn-secondary" onClick={onBack}>
-          ← Zurück
-        </button>
+        <h2>Terminkalender ({results.planungswochen || 2} Wochen)</h2>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={handlePdfExport}
+            title="Aktuellen Wochenplan als PDF herunterladen"
+          >
+            📄 PDF
+          </button>
+          <button className="btn btn-secondary" onClick={onBack}>
+            ← Zurück
+          </button>
+        </div>
       </div>
+
+      {results.zusammenfassung?.konflikte?.length > 0 && (
+        <div className="alert alert-warning">
+          <strong>Konflikte bei der Zuweisung:</strong>
+          <ul style={{ marginBottom: 0 }}>
+            {results.zusammenfassung.konflikte.map((k, i) => (
+              <li key={i}>{k}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {message && (
         <div style={{
@@ -735,7 +787,7 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
             <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Alternativen</div>
           </div>
           <div style={{ flex: 1, minWidth: '120px', padding: '1rem', background: 'white', borderRadius: '6px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#7c3aed' }}>{fixierteTermine?.length || 0}</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--color-primary, #1e3a8a)' }}>{fixierteTermine?.length || 0}</div>
             <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Fixiert</div>
           </div>
         </div>

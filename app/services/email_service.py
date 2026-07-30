@@ -1,5 +1,5 @@
 """Email-Versand für Einladungen."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
@@ -13,7 +13,7 @@ settings = get_settings()
 def generate_invite_token() -> tuple[str, datetime]:
     """Generiert einen Einmal-Token mit 48h Gültigkeit."""
     token = secrets.token_urlsafe(32)
-    expires = datetime.utcnow() + timedelta(hours=48)
+    expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=48)
     return token, expires
 
 

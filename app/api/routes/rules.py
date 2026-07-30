@@ -4,11 +4,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_staff
 from app.db.base import get_db
 from app.models.models import Sitzungsregel
 from app.schemas.schemas import SitzungsregelBase, SitzungsregelOut
 
-router = APIRouter(prefix="/rules", tags=["Sitzungsregeln"])
+router = APIRouter(
+    prefix="/rules",
+    tags=["Sitzungsregeln"],
+    dependencies=[Depends(require_staff)],
+)
 
 
 def _get_or_create(db: Session) -> Sitzungsregel:
