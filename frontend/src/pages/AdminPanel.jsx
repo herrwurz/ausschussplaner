@@ -31,12 +31,13 @@ const TAB_PATHS = {
 }
 
 function pathToTab(pathname) {
-  if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'start'
-  for (const [tab, path] of Object.entries(TAB_PATHS)) {
-    if (tab === 'start') continue
-    if (pathname === path || pathname.endsWith(`/${tab}`)) return tab
-  }
-  return 'start'
+  const normalized = (pathname || '').replace(/\/+$/, '') || '/'
+  if (normalized.endsWith('/panel') || normalized === '/admin/panel') return 'start'
+  const matches = Object.entries(TAB_PATHS)
+    .filter(([tab]) => tab !== 'start')
+    .filter(([, path]) => normalized === path || normalized.endsWith(`/${path.split('/').pop()}`))
+    .sort((a, b) => b[1].length - a[1].length)
+  return matches[0]?.[0] || 'start'
 }
 
 export default function AdminPanel() {

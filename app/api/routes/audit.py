@@ -1,11 +1,12 @@
 """API: Änderungsprotokoll (Audit-Log)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_staff
-from app.db.base import get_db
+from app.db.base import engine, get_db
 from app.models.models import AuditLog
 from app.schemas.schemas import AuditLogOut
 from app.services.audit_service import ACTION_LABELS
@@ -17,6 +18,11 @@ router = APIRouter(
 )
 
 
+def _ensure_audit_table() -> None:
+    """Legt audit_log an, falls create_all auf bestehender DB die Tabelle noch nicht hat."""
+    AuditLog.__table__.create(bind=engine, checkfirst=True)
+
+
 @router.get("", response_model=list[AuditLogOut])
 def list_audit_logs(
     db: Session = Depends(get_db),
@@ -26,6 +32,8 @@ def list_audit_logs(
     entity_id: int | None = None,
 ):
     """Neueste Änderungen zuerst."""
+    _ensure_audit_table()
+
     q = db.query(AuditLog)
     if action:
         if action.endswith("."):
@@ -37,18 +45,27 @@ def list_audit_logs(
     if entity_id is not None:
         q = q.filter(AuditLog.entity_id == entity_id)
 
-    rows = q.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit).all()
+    try:
+        rows = q.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit).all()
+    except (OperationalError, ProgrammingError) as err:
+        db.rollback()
+        _ensure_audit_table()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Audit-Tabelle nicht bereit: {err}",
+        ) from err
+
     return [
         AuditLogOut(
             id=r.id,
             created_at=r.created_at,
             user_id=r.user_id,
-            user_email=r.user_email,
+            user_email=r.user_email or "",
             action=r.action,
             action_label=ACTION_LABELS.get(r.action, r.action),
-            entity_type=r.entity_type,
+            entity_type=r.entity_type or "",
             entity_id=r.entity_id,
-            detail=r.detail,
+            detail=r.detail or "",
         )
         for r in rows
     ]

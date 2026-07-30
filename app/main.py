@@ -76,6 +76,9 @@ def ensure_admin_user(db) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Erzeugt Tabellen, führt idempotente SQLite-Migrationen aus, lädt Seed bei leerer DB."""
+    # Modelle registrieren (u. a. AuditLog), bevor create_all läuft
+    import app.models.models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
 
     # Additive Schema-Fixes für bestehende SQLite-Volumes (Coolify/Prod)
