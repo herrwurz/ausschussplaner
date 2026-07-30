@@ -14,3 +14,6 @@ ausschussplaner.egg-info/
 dist/
 build/
 *.egg-info/
+*.log
+.claude/
+frontend/test-screenshots/

@@ -134,6 +134,7 @@ export default function FixierteTermine() {
 
       <div className="section-header">
         <h2>📆 Fixierte Termine - Kalender</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <button
           className="btn btn-primary"
           onClick={handlePdfExport}
@@ -142,6 +143,32 @@ export default function FixierteTermine() {
         >
           {exporting ? 'PDF wird erstellt…' : '📄 PDF herunterladen'}
         </button>
+        <button
+          className="btn btn-secondary"
+          disabled={loading || termine.length === 0}
+          onClick={async () => {
+            try {
+              const res = await api.get('/export/sitzungen.ics', { responseType: 'blob' })
+              const blob = new Blob([res.data], { type: 'text/calendar' })
+              const url = window.URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `sitzungen_${new Date().toISOString().slice(0, 10)}.ics`
+              document.body.appendChild(a)
+              a.click()
+              a.remove()
+              window.URL.revokeObjectURL(url)
+              setMessage('✅ Kalenderdatei (.ics) heruntergeladen')
+              setTimeout(() => setMessage(''), 3000)
+            } catch (err) {
+              setMessage(`❌ ICS-Export fehlgeschlagen: ${err.message}`)
+            }
+          }}
+          title="Fixierte Termine als Kalenderdatei (Outlook/Google)"
+        >
+          📅 ICS
+        </button>
+        </div>
       </div>
 
       {message && (
