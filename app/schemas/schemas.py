@@ -188,7 +188,7 @@ class BerechnungRequest(BaseModel):
     planungswochen: int = 2
     freitag_modus: str = "reserve"  # reserve | normal | nein
     max_alternativen: int = 5
-    min_verfuegbarkeit: int = 0  # 0-100, nur Termine mit mind. dieser Quote (100 filtert fast alles weg!)
+    min_verfuegbarkeit: int = 100  # 0-100, nur Termine mit mind. dieser Quote
     start_datum: date | None = None  # Montag der ersten Planungswoche; aktiviert Abwesenheits-Check
     max_ausschuesse_pro_tag: int = 2  # Maximum Ausschüsse pro Wochentag
 

@@ -17,7 +17,7 @@ export default function Terminberechnung() {
   const [showResults, setShowResults] = useState(false)
   const [fixierteTermine, setFixierteTermine] = useState([])
   // 0 = alle Termine anzeigen; 100 würde alles außer Volltreffern wegfiltern
-  const [minVerfuegbarkeit, setMinVerfuegbarkeit] = useState(0)
+  const [minVerfuegbarkeit, setMinVerfuegbarkeit] = useState(100)
   const [maxAnzahlTermine, setMaxAnzahlTermine] = useState(1)
 
   useEffect(() => {
@@ -513,13 +513,73 @@ function Kalendaransicht({ results, periode, onBack, fixierteTermine, onTerminFi
 
   const wochen = generierteKalendarwochen()
 
+  const handlePdfExport = async () => {
+    const termine = []
+    for (const woche of wochen) {
+      for (const tag of ['Mo', 'Di', 'Mi', 'Do', 'Fr']) {
+        for (const termin of woche.tage[tag] || []) {
+          termine.push({
+            ausschuss_id: termin.ausschuss_id,
+            ausschuss_name: termin.ausschuss,
+            woche: termin.woche,
+            wochentag: termin.wochentag,
+            start: termin.start,
+            ende: termin.ende,
+            quote: termin.quote ?? null,
+          })
+        }
+      }
+    }
+    if (termine.length === 0) {
+      setMessage('❌ Keine Termine im Wochenplan zum Exportieren')
+      return
+    }
+    try {
+      setMessage('')
+      const res = await api.post(
+        '/calculate/pdf',
+        {
+          titel: periode?.name
+            ? `Sitzungsplan ${periode.name}`
+            : 'Sitzungsplan Ausschüsse',
+          start_datum: results.start_datum || null,
+          termine,
+        },
+        { responseType: 'blob' },
+      )
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `wochenplan_${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      setMessage('✅ PDF heruntergeladen')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      setMessage(`❌ PDF-Export fehlgeschlagen: ${err.response?.status || err.message}`)
+      console.error(err)
+    }
+  }
+
   return (
     <>
       <div className="section-header">
         <h2>Terminkalender ({results.planungswochen || 2} Wochen)</h2>
-        <button className="btn btn-secondary" onClick={onBack}>
-          ← Zurück
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={handlePdfExport}
+            title="Aktuellen Wochenplan als PDF herunterladen"
+          >
+            📄 PDF
+          </button>
+          <button className="btn btn-secondary" onClick={onBack}>
+            ← Zurück
+          </button>
+        </div>
       </div>
 
       {results.zusammenfassung?.konflikte?.length > 0 && (
