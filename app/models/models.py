@@ -244,6 +244,8 @@ class Sitzungsvorschlag(Base):
     status: Mapped[TerminStatus] = mapped_column(Enum(TerminStatus))
     fehlende: Mapped[str] = mapped_column(String(1000), default="")
     planungs_start_datum: Mapped[date | None] = mapped_column(Date, nullable=True)
+    abgesagt: Mapped[bool] = mapped_column(Boolean, default=False)
+    notiz: Mapped[str] = mapped_column(String(1000), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     ausschuss: Mapped[Ausschuss] = relationship()

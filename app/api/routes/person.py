@@ -216,7 +216,10 @@ def get_my_sitzungen(person: Person = Depends(get_current_person), db: Session =
         return []
     rows = (
         db.query(Sitzungsvorschlag)
-        .filter(Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids))
+        .filter(
+            Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids),
+            Sitzungsvorschlag.abgesagt.is_(False),
+        )
         .all()
     )
     return [SitzungsvorschlagOut.model_validate(r) for r in rows]
@@ -244,7 +247,10 @@ def export_my_sitzungen_pdf(person: Person = Depends(get_current_person), db: Se
     if ausschuss_ids:
         rows = (
             db.query(Sitzungsvorschlag)
-            .filter(Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids))
+            .filter(
+                Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids),
+                Sitzungsvorschlag.abgesagt.is_(False),
+            )
             .order_by(Sitzungsvorschlag.woche, Sitzungsvorschlag.wochentag, Sitzungsvorschlag.start_minute)
             .all()
         )

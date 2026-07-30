@@ -24,13 +24,49 @@ def _minutes_to_time(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
+def find_termin_konflikte(
+    db: Session,
+    *,
+    woche: int,
+    wochentag: Wochentag,
+    start_minute: int,
+    end_minute: int,
+    exclude_id: int | None = None,
+) -> list[str]:
+    """Zeitüberlappung mit anderen (nicht abgesagten) Fixierungen in derselben Woche/Tag."""
+    q = db.query(Sitzungsvorschlag).filter(Sitzungsvorschlag.abgesagt.is_(False))
+    if exclude_id is not None:
+        q = q.filter(Sitzungsvorschlag.id != exclude_id)
+    conflicts: list[str] = []
+    start_t = _minutes_to_time(start_minute)
+    end_t = _minutes_to_time(end_minute)
+    for other in q.all():
+        if other.woche != woche or other.wochentag != wochentag:
+            continue
+        if not sched._times_overlap(
+            start_t,
+            end_t,
+            _minutes_to_time(other.start_minute),
+            _minutes_to_time(other.end_minute),
+        ):
+            continue
+        name = other.ausschuss.name if other.ausschuss else f"Ausschuss {other.ausschuss_id}"
+        conflicts.append(
+            f"{name} {_minutes_to_time(other.start_minute)}–{_minutes_to_time(other.end_minute)}"
+        )
+    return conflicts
+
+
 def _load_fixed_slots(db: Session, ausschuss_ids: set[int]) -> list[sched.OccupiedSlot]:
     """Lade fixierte Sitzungsvorschläge als belegte Slots (mit Mitglieder-IDs)."""
     if not ausschuss_ids:
         return []
     vorschlaege = (
         db.query(Sitzungsvorschlag)
-        .filter(Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids))
+        .filter(
+            Sitzungsvorschlag.ausschuss_id.in_(ausschuss_ids),
+            Sitzungsvorschlag.abgesagt.is_(False),
+        )
         .all()
     )
     if not vorschlaege:

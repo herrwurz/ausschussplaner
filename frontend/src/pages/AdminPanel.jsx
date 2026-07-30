@@ -12,8 +12,10 @@ import FixierteTermine from './FixierteTermine'
 import Sitzungsregeln from './Sitzungsregeln'
 import Abwesenheiten from './Abwesenheiten'
 import Verfuegbarkeiten from './Verfuegbarkeiten'
+import AdminStartseite from './AdminStartseite'
 
 const TAB_PATHS = {
+  start: '/admin/panel',
   benutzer: '/admin/benutzer',
   personen: '/admin/personen',
   perioden: '/admin/perioden',
@@ -27,11 +29,12 @@ const TAB_PATHS = {
 }
 
 function pathToTab(pathname) {
-  if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'personen'
+  if (pathname.endsWith('/panel') || pathname === '/admin/panel') return 'start'
   for (const [tab, path] of Object.entries(TAB_PATHS)) {
+    if (tab === 'start') continue
     if (pathname === path || pathname.endsWith(`/${tab}`)) return tab
   }
-  return 'personen'
+  return 'start'
 }
 
 export default function AdminPanel() {
@@ -72,6 +75,7 @@ export default function AdminPanel() {
       user={user}
       onLogout={handleLogout}
     >
+      {activeTab === 'start' && <AdminStartseite />}
       {isSuperAdmin && activeTab === 'benutzer' && <BenutzerTab />}
       {activeTab === 'personen' && <PersonenTab />}
       {activeTab === 'perioden' && <PeriodenManagement />}

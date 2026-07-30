@@ -3,15 +3,21 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_staff
 from app.db.base import get_db
-from app.schemas.schemas import BerechnungRequest, BerechnungResponse, SitzungsvorschlagOut
-from app.services.calculation_service import run_calculation, save_calculation_results
+from app.schemas.schemas import (
+    BerechnungRequest,
+    BerechnungResponse,
+    SitzungsvorschlagAbsagen,
+    SitzungsvorschlagMove,
+    SitzungsvorschlagOut,
+)
+from app.services.calculation_service import find_termin_konflikte, run_calculation
 from app.services.pdf_service import (
     PlanTermin,
     build_wochenplan_pdf,
@@ -38,10 +44,21 @@ def calculate(req: BerechnungRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/results", response_model=list[SitzungsvorschlagOut])
-def get_saved_results(db: Session = Depends(get_db)):
-    """Gibt alle gespeicherten Sitzungsvorschläge zurück."""
+def get_saved_results(
+    db: Session = Depends(get_db),
+    include_cancelled: bool = Query(False, description="Abgesagte Termine mitliefern"),
+):
+    """Gibt gespeicherte Sitzungsvorschläge zurück (standardmäßig ohne Abgesagte)."""
     from app.models.models import Sitzungsvorschlag
-    return db.query(Sitzungsvorschlag).all()
+
+    q = db.query(Sitzungsvorschlag)
+    if not include_cancelled:
+        q = q.filter(Sitzungsvorschlag.abgesagt.is_(False))
+    return q.order_by(
+        Sitzungsvorschlag.woche,
+        Sitzungsvorschlag.wochentag,
+        Sitzungsvorschlag.start_minute,
+    ).all()
 
 
 @router.get("/results/pdf")
@@ -51,6 +68,7 @@ def export_results_pdf(db: Session = Depends(get_db)):
 
     rows = (
         db.query(Sitzungsvorschlag)
+        .filter(Sitzungsvorschlag.abgesagt.is_(False))
         .order_by(Sitzungsvorschlag.woche, Sitzungsvorschlag.wochentag, Sitzungsvorschlag.start_minute)
         .all()
     )
@@ -141,6 +159,7 @@ def export_wochenplan_pdf(payload: WochenplanPdfRequest):
 
 class SitzungsvorschlagCreate(BaseModel):
     """Speichere einen Sitzungsvorschlag."""
+
     ausschuss_id: int
     ausschuss_name: str | None = None
     woche: int
@@ -150,17 +169,49 @@ class SitzungsvorschlagCreate(BaseModel):
     planungs_start_datum: date | None = None
 
 
+def _parse_wochentag(value: str):
+    from app.models.enums import Wochentag
+
+    try:
+        return Wochentag[value.upper()]
+    except KeyError:
+        try:
+            return Wochentag(value)
+        except ValueError as err:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Ungültiger Wochentag: {value}",
+            ) from err
+
+
 @router.post("/results", response_model=SitzungsvorschlagOut, status_code=status.HTTP_201_CREATED)
 def create_sitzungsvorschlag(payload: SitzungsvorschlagCreate, db: Session = Depends(get_db)):
     """Speichere einen einzelnen Sitzungsvorschlag."""
+    from app.models.enums import TerminStatus
     from app.models.models import Sitzungsvorschlag
-    from app.models.enums import Wochentag, TerminStatus
+
+    wochentag = _parse_wochentag(payload.wochentag)
+    if payload.end_minute <= payload.start_minute:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "end_minute muss nach start_minute liegen")
+
+    konflikte = find_termin_konflikte(
+        db,
+        woche=payload.woche,
+        wochentag=wochentag,
+        start_minute=payload.start_minute,
+        end_minute=payload.end_minute,
+    )
+    if konflikte:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Zeitkonflikt mit: {'; '.join(konflikte)}",
+        )
 
     try:
         vorschlag = Sitzungsvorschlag(
             ausschuss_id=payload.ausschuss_id,
             woche=payload.woche,
-            wochentag=Wochentag[payload.wochentag.upper()],
+            wochentag=wochentag,
             start_minute=payload.start_minute,
             end_minute=payload.end_minute,
             anwesend_count=0,
@@ -169,16 +220,83 @@ def create_sitzungsvorschlag(payload: SitzungsvorschlagCreate, db: Session = Dep
             obmann_da=False,
             stv_da=False,
             status=TerminStatus.TOP,
-            fehlende='',
+            fehlende="",
             planungs_start_datum=payload.planungs_start_datum,
+            abgesagt=False,
+            notiz="",
         )
         db.add(vorschlag)
         db.commit()
         db.refresh(vorschlag)
         return vorschlag
+    except HTTPException:
+        raise
     except Exception as err:
         db.rollback()
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(err))
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(err)) from err
+
+
+@router.patch("/results/{vorschlag_id}", response_model=SitzungsvorschlagOut)
+def move_sitzungsvorschlag(
+    vorschlag_id: int,
+    payload: SitzungsvorschlagMove,
+    db: Session = Depends(get_db),
+):
+    """Verschiebe einen fixierten Termin (mit Konfliktprüfung)."""
+    from app.models.models import Sitzungsvorschlag
+
+    vorschlag = db.get(Sitzungsvorschlag, vorschlag_id)
+    if not vorschlag:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sitzungsvorschlag nicht gefunden")
+    if vorschlag.abgesagt:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Abgesagter Termin kann nicht verschoben werden")
+    if payload.end_minute <= payload.start_minute:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "end_minute muss nach start_minute liegen")
+
+    wochentag = _parse_wochentag(payload.wochentag)
+    konflikte = find_termin_konflikte(
+        db,
+        woche=payload.woche,
+        wochentag=wochentag,
+        start_minute=payload.start_minute,
+        end_minute=payload.end_minute,
+        exclude_id=vorschlag_id,
+    )
+    if konflikte:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Zeitkonflikt mit: {'; '.join(konflikte)}",
+        )
+
+    vorschlag.woche = payload.woche
+    vorschlag.wochentag = wochentag
+    vorschlag.start_minute = payload.start_minute
+    vorschlag.end_minute = payload.end_minute
+    db.commit()
+    db.refresh(vorschlag)
+    return vorschlag
+
+
+@router.post("/results/{vorschlag_id}/absagen", response_model=SitzungsvorschlagOut)
+def absagen_sitzungsvorschlag(
+    vorschlag_id: int,
+    payload: SitzungsvorschlagAbsagen,
+    db: Session = Depends(get_db),
+):
+    """Sage einen fixierten Termin ab (bleibt als Historie erhalten)."""
+    from app.models.models import Sitzungsvorschlag
+
+    vorschlag = db.get(Sitzungsvorschlag, vorschlag_id)
+    if not vorschlag:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sitzungsvorschlag nicht gefunden")
+    if vorschlag.abgesagt:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Termin ist bereits abgesagt")
+
+    vorschlag.abgesagt = True
+    vorschlag.notiz = (payload.notiz or "").strip()
+    db.commit()
+    db.refresh(vorschlag)
+    return vorschlag
 
 
 @router.delete("/results/{vorschlag_id}", status_code=status.HTTP_204_NO_CONTENT)

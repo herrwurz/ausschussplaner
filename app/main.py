@@ -81,9 +81,11 @@ async def lifespan(app: FastAPI):
     try:
         from migrate_verfuegbarkeit_periode import main as migrate_verfuegbarkeit
         from migrate_sitzungsvorschlag_planungs_start import main as migrate_planungs_start
+        from migrate_sitzungsvorschlag_absage import main as migrate_absage
 
         migrate_verfuegbarkeit()
         migrate_planungs_start()
+        migrate_absage()
     except Exception as err:
         print(f"WARNUNG: Startup-Migration fehlgeschlagen: {err}")
 

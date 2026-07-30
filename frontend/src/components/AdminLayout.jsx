@@ -2,6 +2,13 @@ import AppShell from './AppShell'
 
 const NAV_GROUPS = [
   {
+    id: 'start',
+    label: 'Übersicht',
+    items: [
+      { id: 'start', label: 'Start', path: '/admin/panel' },
+    ],
+  },
+  {
     id: 'stammdaten',
     label: 'Stammdaten',
     items: [
@@ -33,6 +40,7 @@ const NAV_GROUPS = [
 ]
 
 const PAGE_TITLES = {
+  start: 'Start',
   personen: 'Personen',
   perioden: 'Perioden',
   ausschuesse: 'Ausschüsse',

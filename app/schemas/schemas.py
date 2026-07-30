@@ -292,3 +292,20 @@ class SitzungsvorschlagOut(BaseModel):
     status: TerminStatus
     fehlende: str
     planungs_start_datum: date | None = None
+    abgesagt: bool = False
+    notiz: str = ""
+
+
+class SitzungsvorschlagMove(BaseModel):
+    """Verschiebe einen fixierten Termin auf einen neuen Slot."""
+
+    woche: int = Field(ge=1)
+    wochentag: str
+    start_minute: int = Field(ge=0, le=24 * 60)
+    end_minute: int = Field(ge=0, le=24 * 60)
+
+
+class SitzungsvorschlagAbsagen(BaseModel):
+    """Sage einen fixierten Termin ab."""
+
+    notiz: str = Field(default="", max_length=1000)

@@ -76,6 +76,7 @@ def export_sitzungen_ics(db: Session = Depends(get_db)):
     """ICS-Kalender aller fixierten Sitzungstermine."""
     rows = (
         db.query(Sitzungsvorschlag)
+        .filter(Sitzungsvorschlag.abgesagt.is_(False))
         .order_by(Sitzungsvorschlag.woche, Sitzungsvorschlag.wochentag, Sitzungsvorschlag.start_minute)
         .all()
     )
