@@ -162,15 +162,14 @@ export default function Abwesenheiten() {
             onClick={async () => {
               try {
                 setError('')
-                const res = await api.get('/export/formular/abwesenheit.pdf', {
-                  params: { mit_namen: true },
+                const res = await api.get('/export/formular/erhebung.pdf', {
                   responseType: 'blob',
                 })
                 const blob = new Blob([res.data], { type: 'application/pdf' })
                 const url = window.URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = 'formular_abwesenheit_personen.pdf'
+                a.download = `erhebungsbogen_${new Date().toISOString().slice(0, 10)}.pdf`
                 document.body.appendChild(a)
                 a.click()
                 a.remove()
@@ -179,36 +178,9 @@ export default function Abwesenheiten() {
                 setError(`PDF-Download fehlgeschlagen: ${err.message}`)
               }
             }}
-            title="Eine Seite je aktiver Person – zum Verteilen in der GR"
+            title="Ein Formular: alle Namen | Abwesenheit | Uhrzeiten – zum Verteilen in der GR"
           >
-            📄 Formular (alle Personen)
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={async () => {
-              try {
-                setError('')
-                const res = await api.get('/export/formular/abwesenheit.pdf', {
-                  params: { mit_namen: false },
-                  responseType: 'blob',
-                })
-                const blob = new Blob([res.data], { type: 'application/pdf' })
-                const url = window.URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = 'formular_abwesenheit_leer.pdf'
-                document.body.appendChild(a)
-                a.click()
-                a.remove()
-                window.URL.revokeObjectURL(url)
-              } catch (err) {
-                setError(`PDF-Download fehlgeschlagen: ${err.message}`)
-              }
-            }}
-            title="Leeres Blatt ohne Namen"
-          >
-            📄 Leeres Formular
+            📄 Erhebungsbogen (GR)
           </button>
           <button className="btn btn-primary" onClick={handleShowForm}>
             + Abwesenheit hinzufügen

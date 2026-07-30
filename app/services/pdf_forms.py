@@ -1,4 +1,4 @@
-"""PDF-Formulare zum handschriftlichen Ausfüllen (Verfügbarkeit / Abwesenheit)."""
+"""Ein PDF-Formular für die GR: alle Personen, Abwesenheit + Verfügbarkeits-Uhrzeiten."""
 from __future__ import annotations
 
 import io
@@ -6,37 +6,14 @@ from dataclasses import dataclass
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import (
-    KeepTogether,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.services.pdf_service import (
-    ACCENT,
-    BORDER,
-    MUTED,
-    PRIMARY,
-    _register_font,
-)
+from app.services.pdf_service import ACCENT, BORDER, MUTED, PRIMARY, _register_font
 
 HOURS = [7, 16, 17, 18, 19]
-DAYS = ["Mo", "Di", "Mi", "Do", "Fr"]
-DAY_LABELS = {
-    "Mo": "Montag",
-    "Di": "Dienstag",
-    "Mi": "Mittwoch",
-    "Do": "Donnerstag",
-    "Fr": "Freitag",
-}
-ABSENCE_ARTS = ["Urlaub", "Krankheit", "Dienstreise", "Entschuldigt", "Sonstiges"]
 CHECK = "☐"
 
 
@@ -53,28 +30,19 @@ def _styles(font: str, font_bold: str) -> dict[str, ParagraphStyle]:
             "FormTitle",
             parent=base["Heading1"],
             fontName=font_bold,
-            fontSize=16,
+            fontSize=14,
             textColor=PRIMARY,
             alignment=TA_CENTER,
-            spaceAfter=4,
+            spaceAfter=2,
         ),
         "sub": ParagraphStyle(
             "FormSub",
             parent=base["Normal"],
             fontName=font,
-            fontSize=9,
+            fontSize=8,
             textColor=MUTED,
             alignment=TA_CENTER,
-            spaceAfter=10,
-        ),
-        "body": ParagraphStyle(
-            "FormBody",
-            parent=base["Normal"],
-            fontName=font,
-            fontSize=10,
-            leading=14,
-            alignment=TA_LEFT,
-            spaceAfter=6,
+            spaceAfter=8,
         ),
         "hint": ParagraphStyle(
             "FormHint",
@@ -83,228 +51,141 @@ def _styles(font: str, font_bold: str) -> dict[str, ParagraphStyle]:
             fontSize=8,
             textColor=MUTED,
             leading=11,
-            spaceBefore=8,
-            spaceAfter=6,
+            spaceBefore=6,
         ),
         "cell": ParagraphStyle(
             "FormCell",
             parent=base["Normal"],
             fontName=font,
-            fontSize=9,
+            fontSize=8,
             alignment=TA_CENTER,
-            leading=12,
+            leading=10,
         ),
         "cell_left": ParagraphStyle(
             "FormCellL",
             parent=base["Normal"],
             fontName=font,
-            fontSize=9,
+            fontSize=8,
             alignment=TA_LEFT,
-            leading=12,
+            leading=10,
         ),
         "head": ParagraphStyle(
             "FormHead",
             parent=base["Normal"],
             fontName=font_bold,
-            fontSize=9,
+            fontSize=8,
             textColor=colors.white,
             alignment=TA_CENTER,
-            leading=12,
+            leading=10,
         ),
     }
 
 
-def _field_line(label: str, value: str, styles: dict) -> Paragraph:
-    fill = value if value else "________________________________"
-    return Paragraph(f"<b>{label}:</b> {fill}", styles["body"])
-
-
-def build_verfuegbarkeit_formular_pdf(
-    personen: list[FormPerson] | None = None,
+def build_gr_erhebungsbogen_pdf(
+    personen: list[FormPerson],
     *,
     periode_label: str = "",
 ) -> bytes:
-    """Leeres Verfügbarkeits-Raster; optional eine Seite pro Person (Name vorausgefüllt)."""
+    """Ein Blatt: Name | Abwesenheit (leer) | 07:00 … 19:00 (Ankreuzen)."""
     font = _register_font()
     font_bold = "AppSans-Bold" if font == "AppSans" else "Helvetica-Bold"
     styles = _styles(font, font_bold)
 
-    pages = personen if personen else [FormPerson(name="", gremium="")]
     buf = io.BytesIO()
+    page = landscape(A4)
     doc = SimpleDocTemplate(
         buf,
-        pagesize=A4,
-        leftMargin=14 * mm,
-        rightMargin=14 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm,
-        title="Formular Verfügbarkeit",
+        pagesize=page,
+        leftMargin=10 * mm,
+        rightMargin=10 * mm,
+        topMargin=10 * mm,
+        bottomMargin=10 * mm,
+        title="Erhebungsbogen Verfügbarkeit und Abwesenheit",
     )
 
     story: list = []
-    for idx, person in enumerate(pages):
-        if idx:
-            story.append(PageBreak())
+    titel = "Erhebungsbogen – Verfügbarkeit & Abwesenheit"
+    if periode_label:
+        titel += f" ({periode_label})"
+    story.append(Paragraph(titel, styles["title"]))
+    story.append(
+        Paragraph(
+            "Bitte ausfüllen und zurückgeben. Einträge werden vom Amt in den AusschussPlaner übernommen. "
+            "Verfügbarkeit: typische Woche Mo–Fr anklicken. Abwesenheit: z. B. Urlaub 01.08.–15.08.",
+            styles["sub"],
+        )
+    )
 
-        story.append(Paragraph("Verfügbarkeit – Sitzungsplanung", styles["title"]))
-        story.append(
-            Paragraph(
-                "Bitte ankreuzen, zu welchen Stunden Sie grundsätzlich verfügbar sind. "
-                "Das Formular wird vom Amt in den AusschussPlaner übernommen.",
-                styles["sub"],
-            )
-        )
-        story.append(_field_line("Name", person.name, styles))
-        story.append(_field_line("Gremium", person.gremium, styles))
-        story.append(_field_line("Periode / Gültig ab", periode_label, styles))
-        story.append(Spacer(1, 4 * mm))
+    header = [
+        Paragraph("Name", styles["head"]),
+        Paragraph("Abwesenheit<br/>(von–bis / Art)", styles["head"]),
+    ] + [Paragraph(f"{h:02d}:00", styles["head"]) for h in HOURS]
 
-        header = [Paragraph("", styles["head"])] + [
-            Paragraph(f"{h:02d}:00", styles["head"]) for h in HOURS
-        ]
-        data = [header]
-        for day in DAYS:
-            row = [Paragraph(DAY_LABELS[day], styles["cell_left"])]
-            for _ in HOURS:
-                row.append(Paragraph(CHECK, styles["cell"]))
-            data.append(row)
+    data = [header]
+    for person in personen:
+        label = person.name
+        if person.gremium:
+            label = f"{person.name}<br/><font size='7' color='#6b7280'>{person.gremium}</font>"
+        row = [
+            Paragraph(label, styles["cell_left"]),
+            Paragraph("", styles["cell"]),  # leere Zeile zum Eintragen
+        ] + [Paragraph(CHECK, styles["cell"]) for _ in HOURS]
+        data.append(row)
 
-        col0 = 32 * mm
-        rest = (A4[0] - 28 * mm - col0) / len(HOURS)
-        table = Table(data, colWidths=[col0] + [rest] * len(HOURS), rowHeights=[10 * mm] + [12 * mm] * 5)
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
-                    ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#f3f4f6")),
-                    ("GRID", (0, 0), (-1, -1), 0.6, BORDER),
-                    ("BOX", (0, 0), (-1, -1), 1.0, PRIMARY),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (1, 1), (-1, -1), "CENTER"),
-                    ("LINEBELOW", (0, 0), (-1, 0), 1.5, ACCENT),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
+    if len(data) == 1:
+        data.append(
+            [
+                Paragraph("— keine aktiven Personen —", styles["cell_left"]),
+                Paragraph("", styles["cell"]),
+            ]
+            + [Paragraph(CHECK, styles["cell"]) for _ in HOURS]
         )
-        story.append(table)
-        story.append(
-            Paragraph(
-                "Hinweis: Es zählen volle Stunden (07, 16, 17, 18, 19 Uhr). "
-                "Ein 90‑Minuten-Termin (z. B. 17:00–18:30) erfordert Verfügbarkeit in beiden Stunden.",
-                styles["hint"],
-            )
+
+    usable = page[0] - 20 * mm
+    name_w = usable * 0.22
+    abs_w = usable * 0.28
+    hour_w = (usable - name_w - abs_w) / len(HOURS)
+    col_widths = [name_w, abs_w] + [hour_w] * len(HOURS)
+    row_h = 9 * mm
+    table = Table(data, colWidths=col_widths, rowHeights=[11 * mm] + [row_h] * (len(data) - 1), repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
+                ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#f3f4f6")),
+                ("BACKGROUND", (1, 1), (1, -1), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+                ("BOX", (0, 0), (-1, -1), 1.0, PRIMARY),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+                ("LINEBELOW", (0, 0), (-1, 0), 1.2, ACCENT),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+            ]
         )
-        story.append(Spacer(1, 8 * mm))
-        story.append(
-            Paragraph(
-                "<b>Datum:</b> _______________ &nbsp;&nbsp;&nbsp; "
-                "<b>Unterschrift:</b> ________________________________",
-                styles["body"],
-            )
+    )
+    story.append(table)
+    story.append(Spacer(1, 4 * mm))
+    story.append(
+        Paragraph(
+            "Uhrzeiten = grundsätzlich verfügbar (Mo–Fr). Ausnahmen und Urlaub/Krankheit bitte in der Spalte "
+            "„Abwesenheit“ eintragen. &nbsp;&nbsp; Datum: _____________ &nbsp;&nbsp; "
+            "Bearbeiter/Amt: _____________________",
+            styles["hint"],
         )
+    )
 
     doc.build(story)
     return buf.getvalue()
 
 
-def build_abwesenheit_formular_pdf(
-    personen: list[FormPerson] | None = None,
-    *,
-    rows: int = 8,
-) -> bytes:
-    """Leeres Abwesenheits-Formular; optional eine Seite pro Person."""
-    font = _register_font()
-    font_bold = "AppSans-Bold" if font == "AppSans" else "Helvetica-Bold"
-    styles = _styles(font, font_bold)
+# Rückwärtskompatible Aliase (Tests/alte Aufrufe)
+def build_verfuegbarkeit_formular_pdf(personen=None, *, periode_label: str = "") -> bytes:
+    return build_gr_erhebungsbogen_pdf(personen or [], periode_label=periode_label)
 
-    pages = personen if personen else [FormPerson(name="", gremium="")]
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=14 * mm,
-        rightMargin=14 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm,
-        title="Formular Abwesenheiten",
-    )
 
-    story: list = []
-    for idx, person in enumerate(pages):
-        if idx:
-            story.append(PageBreak())
-
-        block: list = []
-        block.append(Paragraph("Abwesenheiten – Sitzungsplanung", styles["title"]))
-        block.append(
-            Paragraph(
-                "Bitte geplante Abwesenheiten eintragen. Das Formular wird vom Amt "
-                "in den AusschussPlaner übernommen.",
-                styles["sub"],
-            )
-        )
-        block.append(_field_line("Name", person.name, styles))
-        block.append(_field_line("Gremium", person.gremium, styles))
-        block.append(Spacer(1, 3 * mm))
-        block.append(
-            Paragraph(
-                f"<b>Art</b> (eine wählen): {' / '.join(ABSENCE_ARTS)}",
-                styles["hint"],
-            )
-        )
-
-        header = [
-            Paragraph("Von<br/>(TT.MM.JJJJ)", styles["head"]),
-            Paragraph("Bis<br/>(TT.MM.JJJJ)", styles["head"]),
-            Paragraph("Art", styles["head"]),
-            Paragraph("Bemerkung", styles["head"]),
-        ]
-        data = [header]
-        for _ in range(rows):
-            data.append(
-                [
-                    Paragraph("", styles["cell"]),
-                    Paragraph("", styles["cell"]),
-                    Paragraph("", styles["cell"]),
-                    Paragraph("", styles["cell"]),
-                ]
-            )
-
-        usable = A4[0] - 28 * mm
-        widths = [usable * 0.2, usable * 0.2, usable * 0.22, usable * 0.38]
-        table = Table(data, colWidths=widths, rowHeights=[12 * mm] + [11 * mm] * rows)
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
-                    ("GRID", (0, 0), (-1, -1), 0.6, BORDER),
-                    ("BOX", (0, 0), (-1, -1), 1.0, PRIMARY),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LINEBELOW", (0, 0), (-1, 0), 1.5, ACCENT),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
-                ]
-            )
-        )
-        block.append(table)
-        block.append(
-            Paragraph(
-                "Falls Sie keine Abwesenheiten haben: Feld leer lassen bzw. "
-                "„keine“ vermerken und unterschreiben.",
-                styles["hint"],
-            )
-        )
-        block.append(Spacer(1, 8 * mm))
-        block.append(
-            Paragraph(
-                "<b>Datum:</b> _______________ &nbsp;&nbsp;&nbsp; "
-                "<b>Unterschrift:</b> ________________________________",
-                styles["body"],
-            )
-        )
-        story.append(KeepTogether(block))
-
-    doc.build(story)
-    return buf.getvalue()
+def build_abwesenheit_formular_pdf(personen=None, *, rows: int = 8) -> bytes:
+    return build_gr_erhebungsbogen_pdf(personen or [])

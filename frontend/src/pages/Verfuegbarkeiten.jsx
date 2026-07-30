@@ -166,15 +166,15 @@ export default function Verfuegbarkeiten() {
 
   const person = persons.find(p => String(p.id) === String(selectedPerson))
 
-  const downloadFormular = async (mitNamen) => {
+  const downloadErhebungsbogen = async () => {
     try {
       setMessage('')
-      const params = { mit_namen: mitNamen }
+      const params = {}
       if (selectedPeriode) {
         const p = perioden.find((x) => String(x.id) === String(selectedPeriode))
         if (p) params.periode = `${p.name} (${p.start_jahr}–${p.end_jahr})`
       }
-      const res = await api.get('/export/formular/verfuegbarkeit.pdf', {
+      const res = await api.get('/export/formular/erhebung.pdf', {
         params,
         responseType: 'blob',
       })
@@ -182,12 +182,12 @@ export default function Verfuegbarkeiten() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `formular_verfuegbarkeit_${mitNamen ? 'personen' : 'leer'}.pdf`
+      a.download = `erhebungsbogen_${new Date().toISOString().slice(0, 10)}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
-      setMessage('✅ Formular-PDF heruntergeladen')
+      setMessage('✅ Erhebungsbogen heruntergeladen')
       setTimeout(() => setMessage(''), 3000)
     } catch (err) {
       setMessage(`❌ PDF-Download fehlgeschlagen: ${err.message}`)
@@ -198,24 +198,14 @@ export default function Verfuegbarkeiten() {
     <div>
       <div className="section-header">
         <h2>Verfügbarkeiten</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => downloadFormular(true)}
-            title="Eine Seite je aktiver Person – zum Verteilen in der GR"
-          >
-            📄 Formular (alle Personen)
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => downloadFormular(false)}
-            title="Leeres Blatt ohne Namen"
-          >
-            📄 Leeres Formular
-          </button>
-        </div>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={downloadErhebungsbogen}
+          title="Ein Formular: alle Namen | Abwesenheit | Uhrzeiten – zum Verteilen in der GR"
+        >
+          📄 Erhebungsbogen (GR)
+        </button>
       </div>
 
       {message && (
