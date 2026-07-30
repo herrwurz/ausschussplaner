@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_staff
 from app.db.base import get_db
+from app.models.models import User
 from app.schemas.schemas import (
     BerechnungRequest,
     BerechnungResponse,
@@ -17,6 +18,7 @@ from app.schemas.schemas import (
     SitzungsvorschlagMove,
     SitzungsvorschlagOut,
 )
+from app.services.audit_service import write_audit
 from app.services.calculation_service import find_termin_konflikte, run_calculation
 from app.services.pdf_service import (
     PlanTermin,
@@ -184,8 +186,24 @@ def _parse_wochentag(value: str):
             ) from err
 
 
+def _fmt_min(m: int) -> str:
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def _termin_detail(vorschlag, *, name: str | None = None) -> str:
+    label = name or (vorschlag.ausschuss.name if vorschlag.ausschuss else f"Ausschuss {vorschlag.ausschuss_id}")
+    return (
+        f"{label} W{vorschlag.woche} {vorschlag.wochentag.value} "
+        f"{_fmt_min(vorschlag.start_minute)}–{_fmt_min(vorschlag.end_minute)}"
+    )
+
+
 @router.post("/results", response_model=SitzungsvorschlagOut, status_code=status.HTTP_201_CREATED)
-def create_sitzungsvorschlag(payload: SitzungsvorschlagCreate, db: Session = Depends(get_db)):
+def create_sitzungsvorschlag(
+    payload: SitzungsvorschlagCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     """Speichere einen einzelnen Sitzungsvorschlag."""
     from app.models.enums import TerminStatus
     from app.models.models import Sitzungsvorschlag
@@ -226,6 +244,15 @@ def create_sitzungsvorschlag(payload: SitzungsvorschlagCreate, db: Session = Dep
             notiz="",
         )
         db.add(vorschlag)
+        db.flush()
+        write_audit(
+            db,
+            user,
+            action="termin.fixieren",
+            entity_type="sitzungsvorschlag",
+            entity_id=vorschlag.id,
+            detail=_termin_detail(vorschlag, name=payload.ausschuss_name),
+        )
         db.commit()
         db.refresh(vorschlag)
         return vorschlag
@@ -241,6 +268,7 @@ def move_sitzungsvorschlag(
     vorschlag_id: int,
     payload: SitzungsvorschlagMove,
     db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
 ):
     """Verschiebe einen fixierten Termin (mit Konfliktprüfung)."""
     from app.models.models import Sitzungsvorschlag
@@ -268,10 +296,19 @@ def move_sitzungsvorschlag(
             detail=f"Zeitkonflikt mit: {'; '.join(konflikte)}",
         )
 
+    vorher = _termin_detail(vorschlag)
     vorschlag.woche = payload.woche
     vorschlag.wochentag = wochentag
     vorschlag.start_minute = payload.start_minute
     vorschlag.end_minute = payload.end_minute
+    write_audit(
+        db,
+        user,
+        action="termin.verschieben",
+        entity_type="sitzungsvorschlag",
+        entity_id=vorschlag.id,
+        detail=f"{vorher} → {_termin_detail(vorschlag)}",
+    )
     db.commit()
     db.refresh(vorschlag)
     return vorschlag
@@ -282,6 +319,7 @@ def absagen_sitzungsvorschlag(
     vorschlag_id: int,
     payload: SitzungsvorschlagAbsagen,
     db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
 ):
     """Sage einen fixierten Termin ab (bleibt als Historie erhalten)."""
     from app.models.models import Sitzungsvorschlag
@@ -292,15 +330,31 @@ def absagen_sitzungsvorschlag(
     if vorschlag.abgesagt:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Termin ist bereits abgesagt")
 
+    notiz = (payload.notiz or "").strip()
     vorschlag.abgesagt = True
-    vorschlag.notiz = (payload.notiz or "").strip()
+    vorschlag.notiz = notiz
+    detail = _termin_detail(vorschlag)
+    if notiz:
+        detail = f"{detail} — {notiz}"
+    write_audit(
+        db,
+        user,
+        action="termin.absagen",
+        entity_type="sitzungsvorschlag",
+        entity_id=vorschlag.id,
+        detail=detail,
+    )
     db.commit()
     db.refresh(vorschlag)
     return vorschlag
 
 
 @router.delete("/results/{vorschlag_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_sitzungsvorschlag(vorschlag_id: int, db: Session = Depends(get_db)):
+def delete_sitzungsvorschlag(
+    vorschlag_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     """Lösche einen Sitzungsvorschlag."""
     from app.models.models import Sitzungsvorschlag
 
@@ -308,5 +362,13 @@ def delete_sitzungsvorschlag(vorschlag_id: int, db: Session = Depends(get_db)):
     if not vorschlag:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Sitzungsvorschlag nicht gefunden")
 
+    write_audit(
+        db,
+        user,
+        action="termin.loeschen",
+        entity_type="sitzungsvorschlag",
+        entity_id=vorschlag.id,
+        detail=_termin_detail(vorschlag),
+    )
     db.delete(vorschlag)
     db.commit()

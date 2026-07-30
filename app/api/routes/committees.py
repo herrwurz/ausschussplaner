@@ -7,13 +7,14 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_staff
 from app.db.base import get_db
-from app.models.models import Ausschuss, Mitgliedschaft, Person
+from app.models.models import Ausschuss, Mitgliedschaft, Person, User
 from app.schemas.schemas import (
     AusschussCreate,
     AusschussOut,
     AusschussUpdate,
     MitgliedOut,
 )
+from app.services.audit_service import write_audit
 
 router = APIRouter(
     prefix="/committees",
@@ -51,7 +52,12 @@ def list_committees(periode_id: int | None = None, db: Session = Depends(get_db)
 
 
 @router.post("", response_model=AusschussOut, status_code=status.HTTP_201_CREATED)
-def create_committee(payload: AusschussCreate, periode_id: int | None = None, db: Session = Depends(get_db)):
+def create_committee(
+    payload: AusschussCreate,
+    periode_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     a = Ausschuss(
         name=payload.name,
         typ=payload.typ,
@@ -70,6 +76,10 @@ def create_committee(payload: AusschussCreate, periode_id: int | None = None, db
             rolle=m.rolle,
             periode_id=periode_id,
         ))
+    write_audit(
+        db, user, action="ausschuss.anlegen", entity_type="ausschuss", entity_id=a.id,
+        detail=a.name,
+    )
     db.commit()
     db.refresh(a)
     return _to_out(a)
@@ -89,7 +99,12 @@ def get_committee(committee_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{committee_id}", response_model=AusschussOut)
-def update_committee(committee_id: int, payload: AusschussUpdate, db: Session = Depends(get_db)):
+def update_committee(
+    committee_id: int,
+    payload: AusschussUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     a = db.get(Ausschuss, committee_id)
     if a is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ausschuss nicht gefunden")
@@ -106,13 +121,25 @@ def update_committee(committee_id: int, payload: AusschussUpdate, db: Session = 
                 rolle=m["rolle"],
                 periode_id=a.periode_id,
             ))
+    note = a.name
+    if mitglieder is not None:
+        note = f"{a.name} (Mitgliedschaften: {len(mitglieder)})"
+    write_audit(
+        db, user, action="ausschuss.aendern", entity_type="ausschuss", entity_id=a.id,
+        detail=note,
+    )
     db.commit()
     db.refresh(a)
     return _to_out(a)
 
 
 @router.post("/{committee_id}/copy-to-period", response_model=AusschussOut, status_code=status.HTTP_201_CREATED)
-def copy_committee_to_period(committee_id: int, target_periode_id: int, db: Session = Depends(get_db)):
+def copy_committee_to_period(
+    committee_id: int,
+    target_periode_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     """Kopiere Ausschuss zu neuer Periode (ohne Mitgliedschaften)."""
     from app.models.models import Gemeinderatsperiode
 
@@ -151,15 +178,28 @@ def copy_committee_to_period(committee_id: int, target_periode_id: int, db: Sess
         periode_id=target_periode_id,
     )
     db.add(new_committee)
+    db.flush()
+    write_audit(
+        db, user, action="ausschuss.kopieren", entity_type="ausschuss", entity_id=new_committee.id,
+        detail=f"{source.name} → Periode {target_periode_id}",
+    )
     db.commit()
     db.refresh(new_committee)
     return _to_out(new_committee)
 
 
 @router.delete("/{committee_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_committee(committee_id: int, db: Session = Depends(get_db)):
+def delete_committee(
+    committee_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     a = db.get(Ausschuss, committee_id)
     if a is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ausschuss nicht gefunden")
+    write_audit(
+        db, user, action="ausschuss.loeschen", entity_type="ausschuss", entity_id=a.id,
+        detail=a.name,
+    )
     db.delete(a)
     db.commit()

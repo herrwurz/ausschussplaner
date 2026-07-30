@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_staff
 from app.db.base import get_db
-from app.models.models import Person, Verfuegbarkeit
+from app.models.models import Person, User, Verfuegbarkeit
 from app.schemas.schemas import (
     AgendaTransfer,
     AgendaTransferResult,
@@ -17,6 +17,7 @@ from app.schemas.schemas import (
     VerfuegbarkeitBulk,
     VerfuegbarkeitOut,
 )
+from app.services.audit_service import write_audit
 from app.services.person_service import transfer_agenda
 
 router = APIRouter(
@@ -35,9 +36,18 @@ def list_persons(aktiv_only: bool = False, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=PersonOut, status_code=status.HTTP_201_CREATED)
-def create_person(payload: PersonCreate, db: Session = Depends(get_db)):
+def create_person(
+    payload: PersonCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     person = Person(**payload.model_dump())
     db.add(person)
+    db.flush()
+    write_audit(
+        db, user, action="person.anlegen", entity_type="person", entity_id=person.id,
+        detail=f"{person.vorname} {person.nachname}",
+    )
     db.commit()
     db.refresh(person)
     return person
@@ -52,46 +62,80 @@ def get_person(person_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{person_id}", response_model=PersonOut)
-def update_person(person_id: int, payload: PersonUpdate, db: Session = Depends(get_db)):
+def update_person(
+    person_id: int,
+    payload: PersonUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     person = db.get(Person, person_id)
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for k, v in changes.items():
         setattr(person, k, v)
+    write_audit(
+        db, user, action="person.aendern", entity_type="person", entity_id=person.id,
+        detail=f"{person.vorname} {person.nachname}: {', '.join(changes.keys()) or '—'}",
+    )
     db.commit()
     db.refresh(person)
     return person
 
 
 @router.delete("/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_person(person_id: int, db: Session = Depends(get_db)):
+def delete_person(
+    person_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     person = db.get(Person, person_id)
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
+    write_audit(
+        db, user, action="person.loeschen", entity_type="person", entity_id=person.id,
+        detail=f"{person.vorname} {person.nachname}",
+    )
     db.delete(person)
     db.commit()
 
 
 # ── Aktivieren / Deaktivieren ──
 @router.post("/{person_id}/deactivate", response_model=PersonOut)
-def deactivate_person(person_id: int, db: Session = Depends(get_db)):
+def deactivate_person(
+    person_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     """Setzt eine Person inaktiv (z. B. ausgeschieden)."""
     person = db.get(Person, person_id)
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
     person.aktiv = False
+    write_audit(
+        db, user, action="person.deaktivieren", entity_type="person", entity_id=person.id,
+        detail=f"{person.vorname} {person.nachname}",
+    )
     db.commit()
     db.refresh(person)
     return person
 
 
 @router.post("/{person_id}/activate", response_model=PersonOut)
-def activate_person(person_id: int, db: Session = Depends(get_db)):
+def activate_person(
+    person_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     """Reaktiviert eine Person."""
     person = db.get(Person, person_id)
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
     person.aktiv = True
+    write_audit(
+        db, user, action="person.aktivieren", entity_type="person", entity_id=person.id,
+        detail=f"{person.vorname} {person.nachname}",
+    )
     db.commit()
     db.refresh(person)
     return person
@@ -99,16 +143,27 @@ def activate_person(person_id: int, db: Session = Depends(get_db)):
 
 # ── Agenden-Übernahme / Nachfolge ──
 @router.post("/transfer-agenda", response_model=AgendaTransferResult)
-def post_transfer_agenda(payload: AgendaTransfer, db: Session = Depends(get_db)):
+def post_transfer_agenda(
+    payload: AgendaTransfer,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
     """Überträgt alle Ausschuss-Agenden von einer Person auf eine andere.
 
     Anwendungsfall: ausgeschiedenes Mandat wird durch eine neue Person ersetzt;
     die neue Person übernimmt sämtliche Rollen/Mitgliedschaften.
     """
     try:
-        return transfer_agenda(db, payload)
+        result = transfer_agenda(db, payload)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    write_audit(
+        db, user, action="person.agenda_transfer", entity_type="person",
+        entity_id=payload.zu_person_id,
+        detail=f"von {payload.von_person_id} → {payload.zu_person_id}",
+    )
+    db.commit()
+    return result
 
 
 # ── Verfügbarkeiten ──
@@ -150,13 +205,15 @@ def set_verfuegbarkeit(
     payload: VerfuegbarkeitBulk,
     periode_id: int | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
 ):
     """Ersetzt die Verfügbarkeit einer Person für den gewählten Geltungsbereich.
 
     periode_id=None ersetzt die Standardverfügbarkeit, periode_id=X nur die
     Einträge dieser Periode (Standardeinträge bleiben unberührt).
     """
-    if db.get(Person, person_id) is None:
+    person = db.get(Person, person_id)
+    if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
     db.query(Verfuegbarkeit).filter(
         Verfuegbarkeit.person_id == person_id,
@@ -164,6 +221,11 @@ def set_verfuegbarkeit(
     ).delete()
     for item in payload.items:
         db.add(Verfuegbarkeit(person_id=person_id, periode_id=periode_id, **item.model_dump()))
+    scope = f"Periode {periode_id}" if periode_id else "Standard"
+    write_audit(
+        db, user, action="person.verfuegbarkeit", entity_type="person", entity_id=person_id,
+        detail=f"{person.vorname} {person.nachname} ({scope}, {len(payload.items)} Einträge)",
+    )
     db.commit()
     return db.scalars(
         select(Verfuegbarkeit).where(

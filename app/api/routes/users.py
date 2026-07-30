@@ -9,6 +9,7 @@ from app.api.deps import require_super_admin
 from app.db.base import get_db
 from app.models.enums import BenutzerRolle
 from app.models.models import User
+from app.services.audit_service import write_audit
 from app.services.auth_service import AuthService, PasswordService
 
 router = APIRouter(
@@ -20,6 +21,7 @@ router = APIRouter(
 
 class UserCreateRequest(BaseModel):
     """User-Erstellung."""
+
     email: str
     vorname: str
     nachname: str
@@ -28,6 +30,7 @@ class UserCreateRequest(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     """User-Update."""
+
     vorname: str = None
     nachname: str = None
     rolle: str = None
@@ -37,6 +40,7 @@ class UserUpdateRequest(BaseModel):
 
 class UserOut(BaseModel):
     """User Output."""
+
     id: int
     email: str
     vorname: str
@@ -78,6 +82,7 @@ def _parse_ausschuss_ids(user: User) -> list[int]:
 def create_user(
     req: UserCreateRequest,
     db: Session = Depends(get_db),
+    admin: User = Depends(require_super_admin),
 ):
     """Neuen Benutzer erstellen (nur SUPER_ADMIN)."""
     existing = AuthService.get_user_by_email(db, req.email)
@@ -87,7 +92,6 @@ def create_user(
             detail="Benutzer mit dieser Email existiert bereits",
         )
 
-    # Konvertiere rolle String zu Enum
     try:
         rolle_enum = BenutzerRolle(req.rolle.lower())
     except ValueError:
@@ -96,7 +100,6 @@ def create_user(
             detail=f"Ungültige Rolle. Erlaubte Werte: {', '.join([r.value for r in BenutzerRolle])}",
         ) from None
 
-    # Generiere temporäres Passwort
     temp_password = f"Temp{req.email.split('@')[0]}123!"
 
     user = AuthService.create_user(
@@ -107,6 +110,11 @@ def create_user(
         nachname=req.nachname,
         rolle=rolle_enum,
     )
+    write_audit(
+        db, admin, action="benutzer.anlegen", entity_type="user", entity_id=user.id,
+        detail=f"{user.email} ({user.rolle.value})",
+    )
+    db.commit()
 
     return {
         "id": user.id,
@@ -124,6 +132,7 @@ def update_user(
     user_id: int,
     req: UserUpdateRequest,
     db: Session = Depends(get_db),
+    admin: User = Depends(require_super_admin),
 ):
     """Benutzer aktualisieren (nur SUPER_ADMIN)."""
     user = AuthService.get_user_by_id(db, user_id)
@@ -150,6 +159,10 @@ def update_user(
     if req.obmann_ausschuss_ids is not None:
         user.obmann_ausschuss_ids = json.dumps(req.obmann_ausschuss_ids)
 
+    write_audit(
+        db, admin, action="benutzer.aendern", entity_type="user", entity_id=user.id,
+        detail=user.email,
+    )
     db.commit()
     db.refresh(user)
 
@@ -165,7 +178,11 @@ def update_user(
 
 
 @router.delete("/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db)):
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_super_admin),
+):
     """Benutzer löschen (nur SUPER_ADMIN)."""
     user = AuthService.get_user_by_id(db, user_id)
     if not user:
@@ -174,6 +191,11 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
             detail="Benutzer nicht gefunden",
         )
 
+    email = user.email
+    write_audit(
+        db, admin, action="benutzer.loeschen", entity_type="user", entity_id=user.id,
+        detail=email,
+    )
     db.delete(user)
     db.commit()
 
@@ -181,7 +203,11 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{user_id}/reset-password")
-def reset_password(user_id: int, db: Session = Depends(get_db)):
+def reset_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_super_admin),
+):
     """Passwort zurücksetzen (nur SUPER_ADMIN)."""
     user = AuthService.get_user_by_id(db, user_id)
     if not user:
@@ -190,10 +216,12 @@ def reset_password(user_id: int, db: Session = Depends(get_db)):
             detail="Benutzer nicht gefunden",
         )
 
-    # Generiere neues temporäres Passwort
     temp_password = "Reset" + str(user_id).zfill(4) + "!"
-
     user.password_hash = PasswordService.hash_password(temp_password)
+    write_audit(
+        db, admin, action="benutzer.passwort_reset", entity_type="user", entity_id=user.id,
+        detail=user.email,
+    )
     db.commit()
 
     return {

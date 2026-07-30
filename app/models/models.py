@@ -251,6 +251,21 @@ class Sitzungsvorschlag(Base):
     ausschuss: Mapped[Ausschuss] = relationship()
 
 
+class AuditLog(Base):
+    """Änderungsprotokoll: wer hat wann was geändert."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_email: Mapped[str] = mapped_column(String(255), default="")
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), default="", index=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detail: Mapped[str] = mapped_column(String(2000), default="")
+
+
 class Gemeinderatsperiode(Base):
     """Eine 5-Jahres-Gemeinderatsperiode (z.B. P1 2025-2029)."""
 

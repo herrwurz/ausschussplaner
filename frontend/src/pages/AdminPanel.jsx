@@ -13,6 +13,7 @@ import Sitzungsregeln from './Sitzungsregeln'
 import Abwesenheiten from './Abwesenheiten'
 import Verfuegbarkeiten from './Verfuegbarkeiten'
 import AdminStartseite from './AdminStartseite'
+import AuditLog from './AuditLog'
 
 const TAB_PATHS = {
   start: '/admin/panel',
@@ -25,6 +26,7 @@ const TAB_PATHS = {
   'fixierte-termine': '/admin/fixierte-termine',
   abwesenheiten: '/admin/abwesenheiten',
   verfuegbarkeiten: '/admin/verfuegbarkeiten',
+  audit: '/admin/audit',
   sitzungsregeln: '/admin/sitzungsregeln',
 }
 
@@ -76,6 +78,7 @@ export default function AdminPanel() {
       onLogout={handleLogout}
     >
       {activeTab === 'start' && <AdminStartseite />}
+      {activeTab === 'audit' && <AuditLog />}
       {isSuperAdmin && activeTab === 'benutzer' && <BenutzerTab />}
       {activeTab === 'personen' && <PersonenTab />}
       {activeTab === 'perioden' && <PeriodenManagement />}

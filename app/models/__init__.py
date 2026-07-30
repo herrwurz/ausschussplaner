@@ -8,6 +8,7 @@ from app.models.enums import (  # noqa: F401
 )
 from app.models.models import (  # noqa: F401
     Abwesenheit,
+    AuditLog,
     Ausschuss,
     Jahresplan,
     Mitgliedschaft,

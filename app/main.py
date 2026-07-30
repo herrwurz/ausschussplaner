@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
     absences,
+    audit,
     auth,
     calculation,
     committees,
@@ -141,6 +142,7 @@ app.include_router(export.router, prefix="/api")
 app.include_router(jahresplan.router, prefix="/api")
 app.include_router(perioden.router, prefix="/api")
 app.include_router(person.router, prefix="/api")
+app.include_router(audit.router, prefix="/api")
 # app.include_router(admin.router)  # Replaced with React-based admin frontend
 
 

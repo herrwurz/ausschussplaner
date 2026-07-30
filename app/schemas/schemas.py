@@ -1,7 +1,7 @@
 """Pydantic-Schemas für Request-/Response-Validierung."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -309,3 +309,18 @@ class SitzungsvorschlagAbsagen(BaseModel):
     """Sage einen fixierten Termin ab."""
 
     notiz: str = Field(default="", max_length=1000)
+
+
+# ─────────────────────────── Audit-Log ───────────────────────────
+class AuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    created_at: datetime
+    user_id: int | None = None
+    user_email: str = ""
+    action: str
+    action_label: str = ""
+    entity_type: str = ""
+    entity_id: int | None = None
+    detail: str = ""
+

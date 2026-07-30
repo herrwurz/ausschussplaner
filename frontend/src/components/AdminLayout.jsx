@@ -32,6 +32,7 @@ const NAV_GROUPS = [
     id: 'system',
     label: 'System',
     items: [
+      { id: 'audit', label: 'Änderungsprotokoll', path: '/admin/audit' },
       { id: 'sitzungsregeln', label: 'Sitzungsregeln', path: '/admin/sitzungsregeln', superAdminOnly: true },
       { id: 'benutzer', label: 'Benutzer', path: '/admin/benutzer', superAdminOnly: true },
       { id: 'obmann-dashboard', label: 'Obmann-Dashboard', path: '/obmann/dashboard', superAdminOnly: true },
@@ -49,6 +50,7 @@ const PAGE_TITLES = {
   'fixierte-termine': 'Fixierte Termine',
   abwesenheiten: 'Abwesenheiten',
   verfuegbarkeiten: 'Verfügbarkeiten',
+  audit: 'Änderungsprotokoll',
   sitzungsregeln: 'Sitzungsregeln',
   benutzer: 'Benutzer',
 }

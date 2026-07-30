@@ -44,6 +44,7 @@ function AppLayout() {
           <Route path="/admin/fixierte-termine" element={<AdminPanelRoute />} />
           <Route path="/admin/abwesenheiten" element={<AdminPanelRoute />} />
           <Route path="/admin/verfuegbarkeiten" element={<AdminPanelRoute />} />
+          <Route path="/admin/audit" element={<AdminPanelRoute />} />
           <Route path="/admin/sitzungsregeln" element={<AdminPanelRoute />} />
 
           <Route path="/obmann" element={<Navigate to="/obmann/dashboard" replace />} />
