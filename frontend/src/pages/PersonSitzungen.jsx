@@ -107,7 +107,33 @@ export default function PersonSitzungen() {
     <div className="container mt-4">
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h2>Meine Sitzungen</h2>
-        <Link to="/person/dashboard" className="btn btn-secondary">Zurück</Link>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={events.length === 0}
+            onClick={async () => {
+              try {
+                setError('')
+                const res = await api.get('/person/me/sitzungen.pdf', { responseType: 'blob' })
+                const blob = new Blob([res.data], { type: 'application/pdf' })
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `meine_sitzungen_${new Date().toISOString().slice(0, 10)}.pdf`
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                window.URL.revokeObjectURL(url)
+              } catch (err) {
+                setError('PDF-Download fehlgeschlagen')
+              }
+            }}
+          >
+            📄 PDF
+          </button>
+          <Link to="/person/dashboard" className="btn btn-secondary">Zurück</Link>
+        </div>
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}

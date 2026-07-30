@@ -155,9 +155,65 @@ export default function Abwesenheiten() {
 
       <div className="section-header">
         <h2>Abwesenheiten-Verwaltung</h2>
-        <button className="btn btn-primary" onClick={handleShowForm}>
-          + Abwesenheit hinzufügen
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={async () => {
+              try {
+                setError('')
+                const res = await api.get('/export/formular/abwesenheit.pdf', {
+                  params: { mit_namen: true },
+                  responseType: 'blob',
+                })
+                const blob = new Blob([res.data], { type: 'application/pdf' })
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'formular_abwesenheit_personen.pdf'
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                window.URL.revokeObjectURL(url)
+              } catch (err) {
+                setError(`PDF-Download fehlgeschlagen: ${err.message}`)
+              }
+            }}
+            title="Eine Seite je aktiver Person – zum Verteilen in der GR"
+          >
+            📄 Formular (alle Personen)
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={async () => {
+              try {
+                setError('')
+                const res = await api.get('/export/formular/abwesenheit.pdf', {
+                  params: { mit_namen: false },
+                  responseType: 'blob',
+                })
+                const blob = new Blob([res.data], { type: 'application/pdf' })
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'formular_abwesenheit_leer.pdf'
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                window.URL.revokeObjectURL(url)
+              } catch (err) {
+                setError(`PDF-Download fehlgeschlagen: ${err.message}`)
+              }
+            }}
+            title="Leeres Blatt ohne Namen"
+          >
+            📄 Leeres Formular
+          </button>
+          <button className="btn btn-primary" onClick={handleShowForm}>
+            + Abwesenheit hinzufügen
+          </button>
+        </div>
       </div>
 
       {showForm && (

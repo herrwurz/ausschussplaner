@@ -166,10 +166,56 @@ export default function Verfuegbarkeiten() {
 
   const person = persons.find(p => String(p.id) === String(selectedPerson))
 
+  const downloadFormular = async (mitNamen) => {
+    try {
+      setMessage('')
+      const params = { mit_namen: mitNamen }
+      if (selectedPeriode) {
+        const p = perioden.find((x) => String(x.id) === String(selectedPeriode))
+        if (p) params.periode = `${p.name} (${p.start_jahr}–${p.end_jahr})`
+      }
+      const res = await api.get('/export/formular/verfuegbarkeit.pdf', {
+        params,
+        responseType: 'blob',
+      })
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `formular_verfuegbarkeit_${mitNamen ? 'personen' : 'leer'}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      setMessage('✅ Formular-PDF heruntergeladen')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      setMessage(`❌ PDF-Download fehlgeschlagen: ${err.message}`)
+    }
+  }
+
   return (
     <div>
       <div className="section-header">
         <h2>Verfügbarkeiten</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => downloadFormular(true)}
+            title="Eine Seite je aktiver Person – zum Verteilen in der GR"
+          >
+            📄 Formular (alle Personen)
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => downloadFormular(false)}
+            title="Leeres Blatt ohne Namen"
+          >
+            📄 Leeres Formular
+          </button>
+        </div>
       </div>
 
       {message && (
