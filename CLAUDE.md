@@ -312,7 +312,6 @@ Verfügbarkeiten im ersten Ausschuss und verhinderte dort jeden 100%-Termin
 | `migrate_sitzungsvorschlag_planungs_start.py` | Spalte `planungs_start_datum` (idempotent; läuft in start-dev.bat) |
 | `sync_verfuegbarkeiten.py [--fix]` | DB-Verfügbarkeiten mit realdata.json abgleichen/korrigieren |
 | `analyse_ausschuss.py <Name> [docx]` | Diagnose: Mitglieder, Verfügbarkeiten, Engine-Ergebnis je Ausschuss |
-| `delete_testperson.py` | Seed-'Test Person' vollständig entfernen (einmalig) |
 
 ## Bekannte offene Punkte
 
