@@ -44,25 +44,23 @@ export default function AdminStartseite() {
         description="Vier Schritte – vom Abgleich der Verfügbarkeiten bis zum Export."
       />
 
-      <ol className="admin-home__steps">
+      <div className="admin-home__tiles" role="list">
         {STEPS.map((step) => (
-          <li key={step.n} className="admin-home__step">
-            <div className="admin-home__step-num" aria-hidden="true">{step.n}</div>
-            <div className="admin-home__step-body">
-              <h2 className="admin-home__step-title">{step.title}</h2>
-              <p className="admin-home__step-text">{step.text}</p>
-              {step.hint && <p className="admin-home__step-hint">{step.hint}</p>}
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => navigate(step.path)}
-              >
-                {step.cta}
-              </button>
-            </div>
-          </li>
+          <button
+            key={step.n}
+            type="button"
+            role="listitem"
+            className="admin-home__tile"
+            onClick={() => navigate(step.path)}
+          >
+            <span className="admin-home__tile-num" aria-hidden="true">{step.n}</span>
+            <span className="admin-home__tile-title">{step.title}</span>
+            <span className="admin-home__tile-text">{step.text}</span>
+            {step.hint && <span className="admin-home__tile-hint">{step.hint}</span>}
+            <span className="admin-home__tile-cta">{step.cta}</span>
+          </button>
         ))}
-      </ol>
+      </div>
     </div>
   )
 }
